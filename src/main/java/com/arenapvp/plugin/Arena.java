@@ -1,8 +1,10 @@
 package com.arenapvp.plugin;
 
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
+import org.bukkit.scoreboard.Scoreboard;
 
 import java.util.*;
 
@@ -35,7 +37,13 @@ public class Arena {
     private State state = State.WAITING;
     private final Map<UUID, Integer> playerTeam = new HashMap<>(); // joueur -> index equipe (0-based)
     private final Map<Integer, Integer> teamScores = new HashMap<>();
+    private final Map<Integer, Double> teamDamage = new HashMap<>(); // degats infliges par chaque equipe durant la partie
     private final Map<UUID, Location> returnLocations = new HashMap<>(); // ou teleporter le joueur a la fin/depart
+
+    // Scoreboard dedie a cette arene (sidebar des scores + equipes colorees), cree a la demande
+    private Scoreboard scoreboard;
+    // Memorise les lignes actuellement affichees sur le sidebar, pour pouvoir les effacer proprement
+    private final List<String> sidebarEntries = new ArrayList<>();
 
     public Arena(String name) {
         this.name = name;
@@ -193,10 +201,41 @@ public class Arena {
         teamScores.clear();
     }
 
+    // ---- Degats infliges (pour le sidebar) ----
+
+    public double getDamage(int teamIndex) {
+        return teamDamage.getOrDefault(teamIndex, 0.0);
+    }
+
+    public double addDamage(int teamIndex, double amount) {
+        double newTotal = getDamage(teamIndex) + amount;
+        teamDamage.put(teamIndex, newTotal);
+        return newTotal;
+    }
+
+    public void resetDamage() {
+        teamDamage.clear();
+    }
+
+    // ---- Scoreboard dedie (sidebar + equipes colorees) ----
+
+    /** Cree (si besoin) et retourne le scoreboard prive de cette arene. */
+    public Scoreboard getScoreboard() {
+        if (scoreboard == null) {
+            scoreboard = Bukkit.getScoreboardManager().getNewScoreboard();
+        }
+        return scoreboard;
+    }
+
+    public List<String> getSidebarEntries() {
+        return sidebarEntries;
+    }
+
     public void resetAll() {
         playerTeam.clear();
         returnLocations.clear();
         teamScores.clear();
+        teamDamage.clear();
         state = State.WAITING;
     }
 

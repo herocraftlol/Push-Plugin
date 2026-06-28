@@ -1,5 +1,6 @@
 package com.arenapvp.plugin;
 
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -42,6 +43,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
             case "info" -> handleInfo(sender, args);
             case "join" -> handleJoin(sender, args);
             case "leave" -> handleLeave(sender);
+            case "stats" -> handleStats(sender, args);
             case "forcestart" -> handleForceStart(sender, args);
             case "reload" -> handleReload(sender);
             default -> sendHelp(sender);
@@ -302,6 +304,42 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
         manager.leave(player);
     }
 
+    private void handleStats(CommandSender sender, String[] args) {
+        StatsManager stats = plugin.getStatsManager();
+
+        UUID targetUuid;
+        String targetName;
+
+        if (args.length >= 2) {
+            targetName = args[1];
+            Player online = Bukkit.getPlayer(targetName);
+            if (online != null) {
+                targetUuid = online.getUniqueId();
+                targetName = online.getName();
+            } else {
+                UUID found = stats.findUuidByName(targetName);
+                if (found == null) {
+                    sender.sendMessage(ChatColor.RED + "Aucune statistique connue pour " + targetName + ".");
+                    return;
+                }
+                targetUuid = found;
+            }
+        } else if (sender instanceof Player player) {
+            targetUuid = player.getUniqueId();
+            targetName = player.getName();
+        } else {
+            sender.sendMessage(ChatColor.RED + "Usage: /arena stats <joueur>");
+            return;
+        }
+
+        int wins = stats.getWins(targetUuid);
+        int kills = stats.getKills(targetUuid);
+
+        sender.sendMessage(ChatColor.GOLD + "=== Statistiques de " + ChatColor.YELLOW + targetName + ChatColor.GOLD + " ===");
+        sender.sendMessage(ChatColor.GRAY + "Victoires : " + ChatColor.GREEN + wins);
+        sender.sendMessage(ChatColor.GRAY + "Eliminations : " + ChatColor.RED + kills);
+    }
+
     private void handleForceStart(CommandSender sender, String[] args) {
         if (!requireAdmin(sender)) return;
         Arena arena;
@@ -354,6 +392,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(ChatColor.YELLOW + "/arena info <nom>" + ChatColor.GRAY + " - details d'une arene");
         sender.sendMessage(ChatColor.YELLOW + "/arena join <nom>" + ChatColor.GRAY + " - rejoindre le lobby");
         sender.sendMessage(ChatColor.YELLOW + "/arena leave" + ChatColor.GRAY + " - quitter l'arene actuelle");
+        sender.sendMessage(ChatColor.YELLOW + "/arena stats [joueur]" + ChatColor.GRAY + " - victoires et eliminations");
         if (sender.hasPermission("arenapvp.admin")) {
             sender.sendMessage(ChatColor.AQUA + "--- Admin ---");
             sender.sendMessage(ChatColor.YELLOW + "/arena create <nom>");
@@ -373,7 +412,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        List<String> subs = new ArrayList<>(List.of("list", "info", "join", "leave"));
+        List<String> subs = new ArrayList<>(List.of("list", "info", "join", "leave", "stats"));
         if (sender.hasPermission("arenapvp.admin")) {
             subs.addAll(List.of("create", "delete", "setlobby", "setspawn", "setvoid",
                     "setteams", "setteamsize", "setminplayers", "forcestart", "reload"));

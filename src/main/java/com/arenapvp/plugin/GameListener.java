@@ -1,5 +1,6 @@
 package com.arenapvp.plugin;
 
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
@@ -54,6 +55,33 @@ public class GameListener implements Listener {
     public GameListener(ArenaPvPPlugin plugin) {
         this.plugin = plugin;
         this.manager = plugin.getArenaManager();
+        startArrowHeartbeat();
+    }
+
+    /**
+     * Tache de fond qui verifie regulierement (toutes les 0.5s) que chaque joueur en partie
+     * possede bien une fleche dans son inventaire. C'est une securite supplementaire en plus de
+     * la restauration faite juste apres chaque tir (onShootBow) : meme si la fleche venait a
+     * manquer pour une raison quelconque, le joueur ne reste jamais bloque sans pouvoir tirer.
+     */
+    private void startArrowHeartbeat() {
+        Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            for (Player player : plugin.getServer().getOnlinePlayers()) {
+                Arena arena = manager.getArenaOf(player.getUniqueId());
+                if (arena == null || arena.getState() != Arena.State.RUNNING) continue;
+
+                boolean hasArrow = false;
+                for (ItemStack stack : player.getInventory().getStorageContents()) {
+                    if (stack != null && stack.getType() == Material.ARROW) {
+                        hasArrow = true;
+                        break;
+                    }
+                }
+                if (!hasArrow) {
+                    player.getInventory().setItem(8, ArenaManager.createArenaArrow());
+                }
+            }
+        }, 20L, 10L);
     }
 
     // ---------------- Suivi des degats pour determiner l'auteur d'un kill ----------------
@@ -68,9 +96,17 @@ public class GameListener implements Listener {
         Player damager = resolveDamagerPlayer(event.getDamager());
         if (damager == null) return;
         if (damager.getUniqueId().equals(victim.getUniqueId())) return;
+        if (manager.getArenaOf(damager.getUniqueId()) != arena) return;
 
         lastDamager.put(victim.getUniqueId(), damager.getUniqueId());
         lastDamageTime.put(victim.getUniqueId(), System.currentTimeMillis());
+
+        // Comptabilise les degats infliges par l'equipe de l'attaquant pour le sidebar
+        int damagerTeam = arena.getTeamOf(damager.getUniqueId());
+        int victimTeam = arena.getTeamOf(victim.getUniqueId());
+        if (damagerTeam != -1 && damagerTeam != victimTeam) {
+            manager.addDamage(arena, damagerTeam, event.getFinalDamage());
+        }
     }
 
     private Player resolveDamagerPlayer(org.bukkit.entity.Entity entity) {
@@ -117,6 +153,7 @@ public class GameListener implements Listener {
             String killerName = killer.getName();
             manager.broadcastToArena(arena, ChatColor.YELLOW + victim.getName() + ChatColor.GRAY
                     + " a ete elimine par " + ChatColor.YELLOW + killerName + ChatColor.GRAY + ".");
+            plugin.getStatsManager().addKill(killer.getUniqueId(), killerName);
             manager.addPointAndCheckWin(arena, scoringTeamObj, victim);
         } else {
             event.setDeathMessage(null);
@@ -246,8 +283,10 @@ public class GameListener implements Listener {
 
     private boolean isKitItem(ItemStack item) {
         if (item == null) return false;
-        return item.getType() == Material.STONE_SWORD || item.getType() == Material.BOW
-                || item.getType() == Material.ARROW;
+        Material type = item.getType();
+        return type == Material.STONE_SWORD || type == Material.BOW || type == Material.ARROW
+                || type == Material.LEATHER_HELMET || type == Material.LEATHER_CHESTPLATE
+                || type == Material.LEATHER_LEGGINGS || type == Material.LEATHER_BOOTS;
     }
 
     // ---------------- Arc : cooldown 3s + fleche "infinie" ----------------
@@ -278,16 +317,13 @@ public class GameListener implements Listener {
         startBowCooldown(player);
 
         // Securite : si la fleche du slot 8 a malgre tout ete consommee, on la restaure
-        // au tick suivant pour garantir un tir infini.
+        // au tick suivant pour garantir un tir infini (voir aussi startArrowHeartbeat, qui
+        // verifie en plus regulierement l'inventaire complet en cas de cas limite).
         plugin.getServer().getScheduler().scheduleSyncDelayedTask(plugin, () -> {
             if (!player.isOnline()) return;
             ItemStack slot8 = player.getInventory().getItem(8);
             if (slot8 == null || slot8.getType() != Material.ARROW) {
-                ItemStack arrow = new ItemStack(Material.ARROW, 1);
-                org.bukkit.inventory.meta.ItemMeta meta = arrow.getItemMeta();
-                meta.setDisplayName(ChatColor.GRAY + "Fleche d'arene");
-                arrow.setItemMeta(meta);
-                player.getInventory().setItem(8, arrow);
+                player.getInventory().setItem(8, ArenaManager.createArenaArrow());
             }
         }, 1L);
     }

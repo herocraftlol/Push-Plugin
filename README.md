@@ -1,23 +1,8 @@
 # ArenaPvP
 
-![Minecraft Version](https://img.shields.io/badge/Minecraft-1.21.x-brightgreen)
-![Java Version](https://img.shields.io/badge/Java-21-blue)
-![License](https://img.shields.io/badge/License-MIT-yellow)
-![Paper/Spigot](https://img.shields.io/badge/Paper/Spigot-1.21.4-blueviolet)
-
 Plugin Paper/Spigot **1.21.x** (Java 21) : mini-jeu PvP par équipes en arène avec
 zone de vide en dessous, lobby d'attente, kit fixe (épée + arc à recharge), et
 système de points.
-
-## 📥 Téléchargement
-
-Téléchargez la dernière version sur la [page des Releases](https://github.com/herocraftlol/Push-Plugin/releases/latest) : `ArenaPvP-1.0.0.jar`
-
-## 🚀 Installation
-
-1. Placez `ArenaPvP-1.0.0.jar` dans le dossier `plugins/` de votre serveur Paper 1.21.x
-2. Redémarrez le serveur
-3. Configurez vos arènes avec les commandes admin ci-dessous
 
 ## Fonctionnalités
 
@@ -34,19 +19,34 @@ Téléchargez la dernière version sur la [page des Releases](https://github.com
   un diamant spécial en slot 0 de la hotbar pendant l'attente en lobby ;
   un clic dessus lance la partie immédiatement, sans attendre le minimum.
 - **Kit de combat** : épée en pierre + arc (avec une flèche dédiée qui ne se
-  consomme jamais). Aucun des deux ne peut être lâché (drop), déplacé dans
-  l'inventaire, ou échangé entre les mains.
+  consomme jamais) + **armure en cuir complète teintée de la couleur de
+  l'équipe** (casque, plastron, jambières, bottes). Épée, arc et armure sont
+  **incassables** (`unbreakable`). Aucune de ces pièces ne peut être lâchée
+  (drop), déplacée dans l'inventaire, ou échangée entre les mains.
+- **Flèche toujours disponible** : en plus de la restauration immédiate après
+  chaque tir, une vérification de sécurité tourne en tâche de fond (2x/sec)
+  pour garantir qu'un joueur en partie a toujours au moins une flèche dans son
+  inventaire, et ne se retrouve jamais bloqué sans pouvoir tirer à l'arc.
 - **Recharge de l'arc** : 3 secondes (configurable) entre deux tirs, avec
   une jauge de cooldown visible sur l'icône de l'arc.
+- **Sidebar en jeu** (scoreboard latéral propre à chaque arène) affichant en
+  temps réel, pour chaque équipe, ses points et le total des dégâts infligés
+  durant la partie. Affiché dès le lobby d'attente (avec le nombre de joueurs)
+  puis pendant toute la partie.
 - **Élimination par chute dans le vide** : si un joueur descend sous la
   hauteur Y définie pour l'arène, il est éliminé et un point est attribué à
   l'équipe adverse (à l'équipe qui l'a poussé/touché en dernier si identifiable,
   sinon à l'équipe adverse directe en configuration 2 équipes).
 - **Élimination par un autre joueur** : un point est attribué à l'équipe du
   tueur, le joueur éliminé respawn immédiatement dans l'arène avec un kit neuf.
-- **Victoire à 5 points** (configurable). Tous les joueurs sont alors
-  téléportés à l'endroit exact où ils se trouvaient avant de rejoindre le
-  lobby.
+- **Victoire à 5 points** (configurable). À la fin de la partie, **tous les
+  joueurs de l'arène passent immédiatement en mode spectateur**, le nom de
+  l'équipe gagnante est annoncé avec la liste de ses membres, puis (après un
+  court délai) tous les joueurs sont téléportés à l'endroit exact où ils se
+  trouvaient avant de rejoindre le lobby.
+- **Statistiques persistantes** : chaque victoire et chaque élimination est
+  enregistrée par joueur (fichier `stats.yml`), consultable avec
+  `/arena stats [joueur]`.
 
 ## Compilation
 
@@ -138,6 +138,7 @@ position du joueur au moment de la commande est enregistrée).
 /arena info <nom>        - détails d'une arène
 /arena join <nom>        - rejoindre le lobby d'attente
 /arena leave             - quitter l'arène (lobby ou en partie)
+/arena stats [joueur]    - affiche les victoires et éliminations (les tiennes par défaut)
 ```
 
 ## Commandes admin supplémentaires
@@ -184,3 +185,10 @@ end-delay-seconds: 5
   au moment de l'arrêt du serveur.
 - Le respawn après une mort en partie replace le joueur directement au
   spawn de son équipe, avec un kit neuf, sans interruption de la partie.
+- Chaque arène utilise son **propre scoreboard** (sidebar + équipes colorées),
+  isolé des autres arènes et du scoreboard principal du serveur : aucune
+  interférence entre plusieurs parties simultanées.
+- Les statistiques de victoires/éliminations sont stockées dans
+  `plugins/ArenaPvP/stats.yml`, indépendamment de `config.yml`, et sauvegardées
+  immédiatement à chaque victoire ou élimination (ainsi qu'à l'arrêt du
+  serveur).

@@ -5,10 +5,14 @@ import org.bukkit.plugin.java.JavaPlugin;
 public class ArenaPvPPlugin extends JavaPlugin {
 
     private ArenaManager arenaManager;
+    private StatsManager statsManager;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
+
+        statsManager = new StatsManager(this);
+        statsManager.load();
 
         arenaManager = new ArenaManager(this);
         arenaManager.loadAll();
@@ -28,10 +32,17 @@ public class ArenaPvPPlugin extends JavaPlugin {
         if (arenaManager != null) {
             arenaManager.saveAll();
         }
+        if (statsManager != null) {
+            statsManager.save();
+        }
         getLogger().info("ArenaPvP desactive.");
     }
 
     public ArenaManager getArenaManager() {
         return arenaManager;
+    }
+
+    public StatsManager getStatsManager() {
+        return statsManager;
     }
 }

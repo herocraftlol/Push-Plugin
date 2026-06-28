@@ -1,10 +1,12 @@
-com/arenapvp/plugin/ArenaManager$BukkitTaskHandle.class
-com/arenapvp/plugin/Arena$State.class
+com/arenapvp/plugin/StatsManager.class
 com/arenapvp/plugin/ArenaManager.class
 com/arenapvp/plugin/ArenaCommand.class
+com/arenapvp/plugin/ArenaManager$1.class
 com/arenapvp/plugin/AdminItemListener.class
 com/arenapvp/plugin/GameListener.class
-com/arenapvp/plugin/ArenaPvPPlugin.class
-com/arenapvp/plugin/GameListener$1.class
 com/arenapvp/plugin/ArenaCommand$1.class
 com/arenapvp/plugin/Arena.class
+com/arenapvp/plugin/ArenaManager$BukkitTaskHandle.class
+com/arenapvp/plugin/Arena$State.class
+com/arenapvp/plugin/ArenaPvPPlugin.class
+com/arenapvp/plugin/GameListener$1.class

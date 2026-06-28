@@ -4,6 +4,11 @@ import org.bukkit.*;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.LeatherArmorMeta;
+import org.bukkit.scoreboard.Criteria;
+import org.bukkit.scoreboard.DisplaySlot;
+import org.bukkit.scoreboard.Objective;
 import org.bukkit.scoreboard.Scoreboard;
 import org.bukkit.scoreboard.Team;
 import org.bukkit.potion.PotionEffect;
@@ -177,6 +182,10 @@ public class ArenaManager {
         resetPlayerForLobby(player);
         player.teleport(arena.getLobbyLocation());
 
+        // Le joueur voit desormais le scoreboard prive de cette arene (sidebar des scores)
+        player.setScoreboard(arena.getScoreboard());
+        updateSidebar(arena);
+
         ChatColor color = getTeamColor(arena, team);
         String teamName = getTeamDisplayName(arena, team);
         player.sendMessage(ChatColor.GREEN + "Tu as rejoint l'arene " + ChatColor.YELLOW + arena.getName()
@@ -213,6 +222,9 @@ public class ArenaManager {
         removeFromScoreboardTeam(player, arena);
         resetPlayerInventory(player);
 
+        // Le joueur retrouve le scoreboard standard du serveur en quittant l'arene
+        player.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
+
         if (teleportBack && ret != null) {
             player.teleport(ret);
         }
@@ -225,6 +237,8 @@ public class ArenaManager {
         // Si l'arene se vide completement, on la remet a zero proprement.
         if (arena.countPlayers() == 0 && arena.getState() != Arena.State.WAITING) {
             arena.resetAll();
+        } else if (arena.getState() == Arena.State.WAITING) {
+            updateSidebar(arena);
         }
     }
 
@@ -241,6 +255,7 @@ public class ArenaManager {
 
     private void resetPlayerForLobby(Player player) {
         player.getInventory().clear();
+        clearArmor(player);
         player.setHealth(20.0);
         player.setFoodLevel(20);
         player.setGameMode(GameMode.ADVENTURE);
@@ -251,10 +266,19 @@ public class ArenaManager {
 
     private void resetPlayerInventory(Player player) {
         player.getInventory().clear();
+        clearArmor(player);
         player.setGameMode(GameMode.SURVIVAL);
         for (PotionEffect eff : new ArrayList<>(player.getActivePotionEffects())) {
             player.removePotionEffect(eff.getType());
         }
+    }
+
+    /** Retire les 4 pieces d'armure du joueur (PlayerInventory#clear() ne touche pas les slots d'armure). */
+    private void clearArmor(Player player) {
+        player.getInventory().setHelmet(null);
+        player.getInventory().setChestplate(null);
+        player.getInventory().setLeggings(null);
+        player.getInventory().setBoots(null);
     }
 
     /** Lance manuellement la partie (utilise par le diamant admin ou /arena forcestart). */
@@ -268,6 +292,7 @@ public class ArenaManager {
         if (arena.getState() != Arena.State.WAITING) return;
         arena.setState(Arena.State.RUNNING);
         arena.resetScores();
+        arena.resetDamage();
 
         setupScoreboardTeams(arena);
 
@@ -279,6 +304,8 @@ public class ArenaManager {
             giveKit(player, arena);
             addToScoreboardTeam(player, arena, team);
         }
+
+        updateSidebar(arena);
 
         broadcastToArena(arena, ChatColor.GOLD + "La partie commence ! Premiere equipe a "
                 + plugin.getConfig().getInt("points-to-win", 5) + " points gagne !");
@@ -293,39 +320,94 @@ public class ArenaManager {
 
     public void giveKit(Player player, Arena arena) {
         player.getInventory().clear();
+        clearArmor(player);
         player.setGameMode(GameMode.SURVIVAL);
         player.setHealth(20.0);
         player.setFoodLevel(20);
         player.setFireTicks(0);
 
         ItemStack sword = new ItemStack(Material.STONE_SWORD);
-        org.bukkit.inventory.meta.ItemMeta swordMeta = sword.getItemMeta();
+        ItemMeta swordMeta = sword.getItemMeta();
         swordMeta.setUnbreakable(true);
         swordMeta.setDisplayName(ChatColor.GRAY + "Epee d'arene");
         sword.setItemMeta(swordMeta);
 
         ItemStack bow = new ItemStack(Material.BOW);
-        org.bukkit.inventory.meta.ItemMeta bowMeta = bow.getItemMeta();
+        ItemMeta bowMeta = bow.getItemMeta();
         bowMeta.setUnbreakable(true);
         bowMeta.setDisplayName(ChatColor.GRAY + "Arc d'arene");
         bow.setItemMeta(bowMeta);
 
-        ItemStack arrow = new ItemStack(Material.ARROW, 1);
-        org.bukkit.inventory.meta.ItemMeta arrowMeta = arrow.getItemMeta();
-        arrowMeta.setDisplayName(ChatColor.GRAY + "Fleche d'arene");
-        arrow.setItemMeta(arrowMeta);
+        ItemStack arrow = createArenaArrow();
+
+        int team = arena.getTeamOf(player.getUniqueId());
+        Color armorColor = chatColorToColor(getTeamColor(arena, team));
+        ItemStack helmet = createColoredArmor(Material.LEATHER_HELMET, armorColor);
+        ItemStack chestplate = createColoredArmor(Material.LEATHER_CHESTPLATE, armorColor);
+        ItemStack leggings = createColoredArmor(Material.LEATHER_LEGGINGS, armorColor);
+        ItemStack boots = createColoredArmor(Material.LEATHER_BOOTS, armorColor);
 
         player.getInventory().setItem(0, sword);
         player.getInventory().setItem(1, bow);
         player.getInventory().setItem(8, arrow);
         // Cette fleche n'est jamais consommee (voir GameListener#onShootBow qui annule sa
-        // consommation a chaque tir) : elle sert seulement a autoriser Bukkit a declencher le tir.
+        // consommation a chaque tir, et le controle periodique qui la restaure si besoin) :
+        // elle sert seulement a autoriser Bukkit a declencher le tir.
+
+        player.getInventory().setHelmet(helmet);
+        player.getInventory().setChestplate(chestplate);
+        player.getInventory().setLeggings(leggings);
+        player.getInventory().setBoots(boots);
+    }
+
+    /** Cree la fleche dediee d'arene (jamais reellement consommee, voir GameListener). */
+    public static ItemStack createArenaArrow() {
+        ItemStack arrow = new ItemStack(Material.ARROW, 1);
+        ItemMeta meta = arrow.getItemMeta();
+        meta.setDisplayName(ChatColor.GRAY + "Fleche d'arene");
+        arrow.setItemMeta(meta);
+        return arrow;
+    }
+
+    /** Cree une piece d'armure en cuir, teintee a la couleur de l'equipe, et incassable. */
+    private ItemStack createColoredArmor(Material material, Color color) {
+        ItemStack item = new ItemStack(material);
+        LeatherArmorMeta meta = (LeatherArmorMeta) item.getItemMeta();
+        meta.setColor(color);
+        meta.setUnbreakable(true);
+        meta.setDisplayName(ChatColor.GRAY + "Armure d'arene");
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    /** Convertit une ChatColor (texte) en une couleur RGB exploitable pour teindre une armure en cuir. */
+    private Color chatColorToColor(ChatColor chatColor) {
+        return switch (chatColor) {
+            case BLACK -> Color.fromRGB(0, 0, 0);
+            case DARK_BLUE -> Color.fromRGB(0, 0, 170);
+            case DARK_GREEN -> Color.fromRGB(0, 170, 0);
+            case DARK_AQUA -> Color.fromRGB(0, 170, 170);
+            case DARK_RED -> Color.fromRGB(170, 0, 0);
+            case DARK_PURPLE -> Color.fromRGB(170, 0, 170);
+            case GOLD -> Color.fromRGB(255, 170, 0);
+            case GRAY -> Color.fromRGB(170, 170, 170);
+            case DARK_GRAY -> Color.fromRGB(85, 85, 85);
+            case BLUE -> Color.fromRGB(85, 85, 255);
+            case GREEN -> Color.fromRGB(85, 255, 85);
+            case AQUA -> Color.fromRGB(85, 255, 255);
+            case RED -> Color.fromRGB(255, 85, 85);
+            case LIGHT_PURPLE -> Color.fromRGB(255, 85, 255);
+            case YELLOW -> Color.fromRGB(255, 255, 85);
+            case WHITE -> Color.fromRGB(255, 255, 255);
+            default -> Color.fromRGB(255, 255, 255);
+        };
     }
 
     /** Appelee quand un point est marque (kill ou chute dans le vide). */
     public void addPointAndCheckWin(Arena arena, int scoringTeam, Player victim) {
         int pointsToWin = plugin.getConfig().getInt("points-to-win", 5);
         int newScore = arena.addPoint(scoringTeam);
+        updateSidebar(arena);
 
         ChatColor color = getTeamColor(arena, scoringTeam);
         String teamName = getTeamDisplayName(arena, scoringTeam);
@@ -335,6 +417,13 @@ public class ArenaManager {
         if (newScore >= pointsToWin) {
             endGame(arena, scoringTeam);
         }
+    }
+
+    /** Enregistre les degats infliges par une equipe et rafraichit le sidebar. Appele a chaque coup porte. */
+    public void addDamage(Arena arena, int teamIndex, double amount) {
+        if (teamIndex < 0 || amount <= 0) return;
+        arena.addDamage(teamIndex, amount);
+        updateSidebar(arena);
     }
 
     /** Si une equipe entiere se deconnecte / quitte, on verifie s'il ne reste qu'une equipe vivante. */
@@ -355,10 +444,31 @@ public class ArenaManager {
         if (arena.getState() != Arena.State.RUNNING) return;
         arena.setState(Arena.State.ENDING);
 
+        // Tous les joueurs de l'arene (gagnants comme perdants) passent en spectateur immediatement
+        for (UUID uuid : arena.getPlayerTeamMap().keySet()) {
+            Player p = Bukkit.getPlayer(uuid);
+            if (p != null) {
+                p.setGameMode(GameMode.SPECTATOR);
+            }
+        }
+
         ChatColor color = getTeamColor(arena, winningTeam);
         String teamName = getTeamDisplayName(arena, winningTeam);
+
+        List<String> winnerNames = new ArrayList<>();
+        for (UUID uuid : arena.getPlayersInTeam(winningTeam)) {
+            Player p = Bukkit.getPlayer(uuid);
+            String name = p != null ? p.getName() : "Inconnu";
+            winnerNames.add(name);
+            plugin.getStatsManager().addWin(uuid, name);
+        }
+
         broadcastToArena(arena, ChatColor.GOLD + "" + ChatColor.BOLD + "Victoire de l'equipe "
                 + color + teamName + ChatColor.GOLD + " !");
+        broadcastToArena(arena, color + "" + ChatColor.BOLD + teamName + ChatColor.GRAY
+                + " : " + ChatColor.WHITE + String.join(ChatColor.GRAY + ", " + ChatColor.WHITE, winnerNames));
+
+        updateSidebar(arena);
 
         int delay = plugin.getConfig().getInt("end-delay-seconds", 5);
         BukkitTaskHandle handle = new BukkitTaskHandle();
@@ -376,6 +486,7 @@ public class ArenaManager {
             if (player != null) {
                 removeFromScoreboardTeam(player, arena);
                 resetPlayerInventory(player);
+                player.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
                 Location ret = arena.getReturnLocation(uuid);
                 if (ret != null) {
                     player.teleport(ret);
@@ -395,7 +506,7 @@ public class ArenaManager {
     }
 
     private void setupScoreboardTeams(Arena arena) {
-        Scoreboard board = Bukkit.getScoreboardManager().getMainScoreboard();
+        Scoreboard board = arena.getScoreboard();
         for (int i = 0; i < arena.getTeamCount(); i++) {
             String name = scoreboardTeamName(arena, i);
             Team team = board.getTeam(name);
@@ -409,7 +520,7 @@ public class ArenaManager {
     }
 
     private void addToScoreboardTeam(Player player, Arena arena, int teamIndex) {
-        Scoreboard board = Bukkit.getScoreboardManager().getMainScoreboard();
+        Scoreboard board = arena.getScoreboard();
         Team team = board.getTeam(scoreboardTeamName(arena, teamIndex));
         if (team != null) {
             team.addEntry(player.getName());
@@ -417,11 +528,66 @@ public class ArenaManager {
     }
 
     private void removeFromScoreboardTeam(Player player, Arena arena) {
-        Scoreboard board = Bukkit.getScoreboardManager().getMainScoreboard();
+        Scoreboard board = arena.getScoreboard();
         for (int i = 0; i < arena.getTeamCount(); i++) {
             Team team = board.getTeam(scoreboardTeamName(arena, i));
             if (team != null) {
                 team.removeEntry(player.getName());
+            }
+        }
+    }
+
+    // ================= Sidebar (points + degats) =================
+
+    private static final String SIDEBAR_OBJECTIVE = "apvp_side";
+
+    /** Cree l'objectif sidebar de l'arene s'il n'existe pas encore. */
+    private void ensureSidebar(Arena arena) {
+        Scoreboard board = arena.getScoreboard();
+        if (board.getObjective(SIDEBAR_OBJECTIVE) == null) {
+            Objective obj = board.registerNewObjective(SIDEBAR_OBJECTIVE, Criteria.DUMMY,
+                    ChatColor.GOLD + "" + ChatColor.BOLD + arena.getName());
+            obj.setDisplaySlot(DisplaySlot.SIDEBAR);
+        }
+    }
+
+    /**
+     * Rafraichit le contenu du sidebar de l'arene : pendant l'attente, affiche le nombre de
+     * joueurs ; pendant/apres la partie, affiche pour chaque equipe ses points et le total de
+     * degats infliges.
+     */
+    public void updateSidebar(Arena arena) {
+        ensureSidebar(arena);
+        Scoreboard board = arena.getScoreboard();
+        Objective obj = board.getObjective(SIDEBAR_OBJECTIVE);
+        if (obj == null) return;
+
+        // On efface les anciennes lignes avant de reecrire, car les entrees sont des chaines libres
+        for (String oldEntry : new ArrayList<>(arena.getSidebarEntries())) {
+            board.resetScores(oldEntry);
+        }
+        arena.getSidebarEntries().clear();
+
+        if (arena.getState() == Arena.State.WAITING) {
+            String line = ChatColor.YELLOW + "En attente de joueurs... " + ChatColor.WHITE
+                    + arena.countPlayers() + "/" + arena.getMaxPlayers();
+            obj.getScore(line).setScore(0);
+            arena.getSidebarEntries().add(line);
+        } else {
+            for (int i = 0; i < arena.getTeamCount(); i++) {
+                ChatColor color = getTeamColor(arena, i);
+                String teamName = getTeamDisplayName(arena, i);
+                int points = arena.getScore(i);
+                int damage = (int) Math.round(arena.getDamage(i));
+
+                // Le code couleur final (invisible, sans texte derriere) garantit l'unicite de
+                // la ligne meme si deux equipes affichaient par coincidence le meme texte.
+                String line = color + teamName + ChatColor.GRAY + ": " + ChatColor.WHITE + points
+                        + ChatColor.GRAY + " pts" + ChatColor.DARK_GRAY + " | " + ChatColor.RED
+                        + damage + ChatColor.GRAY + " dgts" + ChatColor.values()[i % ChatColor.values().length];
+
+                obj.getScore(line).setScore(points);
+                arena.getSidebarEntries().add(line);
             }
         }
     }
