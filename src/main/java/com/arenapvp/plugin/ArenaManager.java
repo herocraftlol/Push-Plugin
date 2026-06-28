@@ -19,15 +19,21 @@ import java.util.stream.Collectors;
 
 /**
  * Gere la collection d'arenes : creation, suppression, persistance dans config.yml,
- * cycle de vie des parties (lobby -> demarrage -> fin -> reset), et teleportations.
+ * cycle de vie des parties (lobby -> countdown -> demarrage -> point -> reset), et teleportations.
  */
 public class ArenaManager {
 
     private final ArenaPvPPlugin plugin;
     private final Map<String, Arena> arenas = new HashMap<>();
 
-    // Tache de compte a rebours / fin de partie par arene (pour pouvoir l'annuler si besoin)
+    // Taches planifiees par arene (pour pouvoir les annuler)
     private final Map<String, BukkitTaskHandle> endTasks = new HashMap<>();
+    // Countdown de debut par arene (pour l'annuler si besoin)
+    private final Map<String, Integer> startCountdownTasks = new HashMap<>();
+    // Countdown de reprise apres point par arene
+    private final Map<String, Integer> pointResumeTasks = new HashMap<>();
+    // Flag : arene en pause apres un point (interdit les kills/moves pendant le countdown)
+    private final Set<String> arenasPaused = new HashSet<>();
 
     public ArenaManager(ArenaPvPPlugin plugin) {
         this.plugin = plugin;
@@ -151,6 +157,11 @@ public class ArenaManager {
         return null;
     }
 
+    /** Retourne true si l'arene est en pause apres un point (respawn countdown). */
+    public boolean isArenaPaused(Arena arena) {
+        return arenasPaused.contains(arena.getName().toLowerCase());
+    }
+
     // ================= Cycle de vie =================
 
     /**
@@ -182,7 +193,6 @@ public class ArenaManager {
         resetPlayerForLobby(player);
         player.teleport(arena.getLobbyLocation());
 
-        // Le joueur voit desormais le scoreboard prive de cette arene (sidebar des scores)
         player.setScoreboard(arena.getScoreboard());
         updateSidebar(arena);
 
@@ -197,7 +207,7 @@ public class ArenaManager {
         giveAdminStartItem(player, arena);
 
         if (arena.countPlayers() >= arena.getMinPlayersToStart()) {
-            startGame(arena);
+            startPreGameCountdown(arena);
         }
         return true;
     }
@@ -222,22 +232,25 @@ public class ArenaManager {
         removeFromScoreboardTeam(player, arena);
         resetPlayerInventory(player);
 
-        // Le joueur retrouve le scoreboard standard du serveur en quittant l'arene
         player.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
 
         if (teleportBack && ret != null) {
             player.teleport(ret);
         }
 
-        // Si la partie est en cours et qu'il ne reste plus assez de joueurs/equipes, on pourrait l'arreter.
         if (arena.getState() == Arena.State.RUNNING) {
             checkForWinnerAfterDisconnect(arena);
         }
 
-        // Si l'arene se vide completement, on la remet a zero proprement.
         if (arena.countPlayers() == 0 && arena.getState() != Arena.State.WAITING) {
+            cancelStartCountdown(arena);
+            arenasPaused.remove(arena.getName().toLowerCase());
             arena.resetAll();
         } else if (arena.getState() == Arena.State.WAITING) {
+            // Si le countdown etait lance mais qu'il n'y a plus assez de joueurs, on l'annule
+            if (arena.countPlayers() < arena.getMinPlayersToStart()) {
+                cancelStartCountdown(arena);
+            }
             updateSidebar(arena);
         }
     }
@@ -245,7 +258,7 @@ public class ArenaManager {
     private void giveAdminStartItem(Player player, Arena arena) {
         if (player.hasPermission("arenapvp.admin")) {
             ItemStack diamond = new ItemStack(Material.DIAMOND, 1);
-            org.bukkit.inventory.meta.ItemMeta meta = diamond.getItemMeta();
+            ItemMeta meta = diamond.getItemMeta();
             meta.setDisplayName(ChatColor.AQUA + "Lancer la partie maintenant");
             meta.setLore(List.of(ChatColor.GRAY + "Clique pour demarrer la partie immediatement."));
             diamond.setItemMeta(meta);
@@ -273,7 +286,7 @@ public class ArenaManager {
         }
     }
 
-    /** Retire les 4 pieces d'armure du joueur (PlayerInventory#clear() ne touche pas les slots d'armure). */
+    /** Retire les 4 pieces d'armure du joueur. */
     private void clearArmor(Player player) {
         player.getInventory().setHelmet(null);
         player.getInventory().setChestplate(null);
@@ -285,8 +298,67 @@ public class ArenaManager {
     public void forceStart(Arena arena) {
         if (arena.getState() != Arena.State.WAITING) return;
         if (arena.countPlayers() < 1) return;
+        // Annule le countdown en cours si present
+        cancelStartCountdown(arena);
         startGame(arena);
     }
+
+    // ================= Countdown pre-partie (30s) =================
+
+    /**
+     * Demarre le compte a rebours de 30s avant le debut de la partie.
+     * Si un countdown est deja en cours pour cette arene, ne fait rien.
+     */
+    private void startPreGameCountdown(Arena arena) {
+        String key = arena.getName().toLowerCase();
+        if (startCountdownTasks.containsKey(key)) return; // deja en cours
+
+        int[] remaining = {30};
+        int taskId = Bukkit.getScheduler().scheduleSyncRepeatingTask(plugin, () -> {
+            int r = remaining[0];
+
+            if (arena.getState() != Arena.State.WAITING || arena.countPlayers() == 0) {
+                cancelStartCountdown(arena);
+                return;
+            }
+
+            if (r <= 0) {
+                cancelStartCountdown(arena);
+                startGame(arena);
+                return;
+            }
+
+            // Annonces aux moments cles
+            if (r == 30 || r == 20 || r == 10 || r == 5 || r == 3 || r == 2 || r == 1) {
+                broadcastToArena(arena, ChatColor.YELLOW + "La partie commence dans "
+                        + ChatColor.GOLD + r + ChatColor.YELLOW + " seconde" + (r > 1 ? "s" : "") + " !");
+                // Son de tick
+                for (Player p : getOnlinePlayersInArena(arena)) {
+                    if (r <= 5) {
+                        p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1.0f, r <= 3 ? 1.5f : 1.0f);
+                    } else {
+                        p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.8f, 0.8f);
+                    }
+                }
+            }
+
+            remaining[0]--;
+        }, 0L, 20L);
+
+        startCountdownTasks.put(key, taskId);
+        broadcastToArena(arena, ChatColor.GREEN + "Assez de joueurs ! La partie commence dans "
+                + ChatColor.GOLD + "30 secondes" + ChatColor.GREEN + ".");
+    }
+
+    private void cancelStartCountdown(Arena arena) {
+        String key = arena.getName().toLowerCase();
+        Integer taskId = startCountdownTasks.remove(key);
+        if (taskId != null) {
+            Bukkit.getScheduler().cancelTask(taskId);
+        }
+    }
+
+    // ================= Demarrage =================
 
     private void startGame(Arena arena) {
         if (arena.getState() != Arena.State.WAITING) return;
@@ -309,6 +381,11 @@ public class ArenaManager {
 
         broadcastToArena(arena, ChatColor.GOLD + "La partie commence ! Premiere equipe a "
                 + plugin.getConfig().getInt("points-to-win", 5) + " points gagne !");
+
+        // Son de debut de partie
+        for (Player p : getOnlinePlayersInArena(arena)) {
+            p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
+        }
     }
 
     private void teleportToTeamSpawn(Player player, Arena arena, int team) {
@@ -332,12 +409,15 @@ public class ArenaManager {
         swordMeta.setDisplayName(ChatColor.GRAY + "Epee d'arene");
         sword.setItemMeta(swordMeta);
 
+        // Arc : INFINITY enchanteé pour que Bukkit accepte le tir sans consommer de fleche
         ItemStack bow = new ItemStack(Material.BOW);
         ItemMeta bowMeta = bow.getItemMeta();
         bowMeta.setUnbreakable(true);
         bowMeta.setDisplayName(ChatColor.GRAY + "Arc d'arene");
+        bowMeta.addEnchant(org.bukkit.enchantments.Enchantment.INFINITY, 1, true);
         bow.setItemMeta(bowMeta);
 
+        // On donne quand meme une fleche pour satisfaire la condition de Bukkit (arc infini en necessite 1)
         ItemStack arrow = createArenaArrow();
 
         int team = arena.getTeamOf(player.getUniqueId());
@@ -350,9 +430,6 @@ public class ArenaManager {
         player.getInventory().setItem(0, sword);
         player.getInventory().setItem(1, bow);
         player.getInventory().setItem(8, arrow);
-        // Cette fleche n'est jamais consommee (voir GameListener#onShootBow qui annule sa
-        // consommation a chaque tir, et le controle periodique qui la restaure si besoin) :
-        // elle sert seulement a autoriser Bukkit a declencher le tir.
 
         player.getInventory().setHelmet(helmet);
         player.getInventory().setChestplate(chestplate);
@@ -360,7 +437,7 @@ public class ArenaManager {
         player.getInventory().setBoots(boots);
     }
 
-    /** Cree la fleche dediee d'arene (jamais reellement consommee, voir GameListener). */
+    /** Cree la fleche dediee d'arene. */
     public static ItemStack createArenaArrow() {
         ItemStack arrow = new ItemStack(Material.ARROW, 1);
         ItemMeta meta = arrow.getItemMeta();
@@ -380,7 +457,7 @@ public class ArenaManager {
         return item;
     }
 
-    /** Convertit une ChatColor (texte) en une couleur RGB exploitable pour teindre une armure en cuir. */
+    /** Convertit une ChatColor en une couleur RGB exploitable pour teindre une armure en cuir. */
     private Color chatColorToColor(ChatColor chatColor) {
         return switch (chatColor) {
             case BLACK -> Color.fromRGB(0, 0, 0);
@@ -403,7 +480,12 @@ public class ArenaManager {
         };
     }
 
-    /** Appelee quand un point est marque (kill ou chute dans le vide). */
+    // ================= Point marque -> reteleportation + countdown 5s =================
+
+    /**
+     * Appelee quand un point est marque (kill ou chute dans le vide).
+     * Reteleporte tout le monde a sa base, lance un countdown de 5s avant de reprendre.
+     */
     public void addPointAndCheckWin(Arena arena, int scoringTeam, Player victim) {
         int pointsToWin = plugin.getConfig().getInt("points-to-win", 5);
         int newScore = arena.addPoint(scoringTeam);
@@ -416,7 +498,81 @@ public class ArenaManager {
 
         if (newScore >= pointsToWin) {
             endGame(arena, scoringTeam);
+            return;
         }
+
+        // La partie continue : reteleporter tout le monde et lancer le countdown 5s
+        startPointResumeCountdown(arena);
+    }
+
+    /**
+     * Reteleporte tous les joueurs a leur base et lance un compte a rebours de 5s
+     * avant de les laisser jouer a nouveau.
+     */
+    private void startPointResumeCountdown(Arena arena) {
+        String key = arena.getName().toLowerCase();
+
+        // Annule un eventuel countdown precedent (ne devrait pas arriver mais securite)
+        Integer oldTask = pointResumeTasks.remove(key);
+        if (oldTask != null) Bukkit.getScheduler().cancelTask(oldTask);
+
+        arenasPaused.add(key);
+
+        // Reteleporter tous les joueurs et leur retirer le kit (etat neutre)
+        for (Map.Entry<UUID, Integer> entry : new HashMap<>(arena.getPlayerTeamMap()).entrySet()) {
+            Player p = Bukkit.getPlayer(entry.getKey());
+            if (p == null) continue;
+            int team = entry.getValue();
+            teleportToTeamSpawn(p, arena, team);
+            // Retirer les items pendant le countdown (ne peut pas combattre)
+            p.getInventory().clear();
+            clearArmor(p);
+            p.setHealth(20.0);
+            p.setFoodLevel(20);
+            p.setFireTicks(0);
+            // Son de point marque
+            p.playSound(p.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.2f);
+        }
+
+        int[] remaining = {5};
+        int taskId = Bukkit.getScheduler().scheduleSyncRepeatingTask(plugin, () -> {
+            int r = remaining[0];
+
+            if (arena.getState() != Arena.State.RUNNING) {
+                arenasPaused.remove(key);
+                Integer t = pointResumeTasks.remove(key);
+                if (t != null) Bukkit.getScheduler().cancelTask(t);
+                return;
+            }
+
+            if (r <= 0) {
+                arenasPaused.remove(key);
+                pointResumeTasks.remove(key);
+                // Redonner le kit a tout le monde
+                for (UUID uuid : new ArrayList<>(arena.getPlayerTeamMap().keySet())) {
+                    Player p = Bukkit.getPlayer(uuid);
+                    if (p != null) {
+                        giveKit(p, arena);
+                        p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.5f);
+                    }
+                }
+                broadcastToArena(arena, ChatColor.GREEN + "" + ChatColor.BOLD + "COMBAT !");
+                // On annule la tache de l'interieur via return (la tache se termine naturellement)
+                Bukkit.getScheduler().cancelTask(pointResumeTasks.getOrDefault(key, -1));
+                return;
+            }
+
+            // Annonce et son a chaque seconde
+            broadcastToArena(arena, ChatColor.YELLOW + "Reprise dans " + ChatColor.GOLD + r
+                    + ChatColor.YELLOW + " seconde" + (r > 1 ? "s" : "") + "...");
+            for (Player p : getOnlinePlayersInArena(arena)) {
+                p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1.0f, r == 1 ? 1.8f : 1.2f);
+            }
+
+            remaining[0]--;
+        }, 20L, 20L);
+
+        pointResumeTasks.put(key, taskId);
     }
 
     /** Enregistre les degats infliges par une equipe et rafraichit le sidebar. Appele a chaque coup porte. */
@@ -436,6 +592,7 @@ public class ArenaManager {
             int winner = teamsWithPlayers.iterator().next();
             endGame(arena, winner);
         } else if (teamsWithPlayers.isEmpty()) {
+            arenasPaused.remove(arena.getName().toLowerCase());
             arena.resetAll();
         }
     }
@@ -444,7 +601,12 @@ public class ArenaManager {
         if (arena.getState() != Arena.State.RUNNING) return;
         arena.setState(Arena.State.ENDING);
 
-        // Tous les joueurs de l'arene (gagnants comme perdants) passent en spectateur immediatement
+        // Annule le countdown de reprise si present
+        String key = arena.getName().toLowerCase();
+        Integer resumeTask = pointResumeTasks.remove(key);
+        if (resumeTask != null) Bukkit.getScheduler().cancelTask(resumeTask);
+        arenasPaused.remove(key);
+
         for (UUID uuid : arena.getPlayerTeamMap().keySet()) {
             Player p = Bukkit.getPlayer(uuid);
             if (p != null) {
@@ -467,6 +629,11 @@ public class ArenaManager {
                 + color + teamName + ChatColor.GOLD + " !");
         broadcastToArena(arena, color + "" + ChatColor.BOLD + teamName + ChatColor.GRAY
                 + " : " + ChatColor.WHITE + String.join(ChatColor.GRAY + ", " + ChatColor.WHITE, winnerNames));
+
+        // Son de victoire
+        for (Player p : getOnlinePlayersInArena(arena)) {
+            p.playSound(p.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.0f);
+        }
 
         updateSidebar(arena);
 
@@ -500,7 +667,6 @@ public class ArenaManager {
     // ================= Scoreboard / equipes visuelles =================
 
     private String scoreboardTeamName(Arena arena, int teamIndex) {
-        // Limite Bukkit : 16 caracteres pour le nom d'equipe scoreboard (1.21 tolere plus, mais on reste safe)
         String base = "apvp_" + arena.getName() + "_" + teamIndex;
         return base.length() > 16 ? base.substring(0, 16) : base;
     }
@@ -541,7 +707,6 @@ public class ArenaManager {
 
     private static final String SIDEBAR_OBJECTIVE = "apvp_side";
 
-    /** Cree l'objectif sidebar de l'arene s'il n'existe pas encore. */
     private void ensureSidebar(Arena arena) {
         Scoreboard board = arena.getScoreboard();
         if (board.getObjective(SIDEBAR_OBJECTIVE) == null) {
@@ -551,18 +716,12 @@ public class ArenaManager {
         }
     }
 
-    /**
-     * Rafraichit le contenu du sidebar de l'arene : pendant l'attente, affiche le nombre de
-     * joueurs ; pendant/apres la partie, affiche pour chaque equipe ses points et le total de
-     * degats infliges.
-     */
     public void updateSidebar(Arena arena) {
         ensureSidebar(arena);
         Scoreboard board = arena.getScoreboard();
         Objective obj = board.getObjective(SIDEBAR_OBJECTIVE);
         if (obj == null) return;
 
-        // On efface les anciennes lignes avant de reecrire, car les entrees sont des chaines libres
         for (String oldEntry : new ArrayList<>(arena.getSidebarEntries())) {
             board.resetScores(oldEntry);
         }
@@ -580,8 +739,6 @@ public class ArenaManager {
                 int points = arena.getScore(i);
                 int damage = (int) Math.round(arena.getDamage(i));
 
-                // Le code couleur final (invisible, sans texte derriere) garantit l'unicite de
-                // la ligne meme si deux equipes affichaient par coincidence le meme texte.
                 String line = color + teamName + ChatColor.GRAY + ": " + ChatColor.WHITE + points
                         + ChatColor.GRAY + " pts" + ChatColor.DARK_GRAY + " | " + ChatColor.RED
                         + damage + ChatColor.GRAY + " dgts" + ChatColor.values()[i % ChatColor.values().length];

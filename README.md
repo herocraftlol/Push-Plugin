@@ -6,8 +6,9 @@
 ![Paper/Spigot](https://img.shields.io/badge/Paper/Spigot-1.21.4-blueviolet)
 
 Plugin Paper/Spigot **1.21.x** (Java 21) : mini-jeu PvP par équipes en arène avec
-zone de vide en dessous, lobby d'attente, kit fixe (épée + arc à recharge + armure),
-scoreboard en temps réel, mode spectateur et statistiques persistantes.
+zone de vide en dessous, lobby d'attente, **countdown de début (30s)**, kit fixe
+(épée + arc à recharge + armure), **pause entre points (5s)**, scoreboard en temps
+réel, mode spectateur et statistiques persistantes.
 
 ## 📥 Téléchargement
 
@@ -30,14 +31,16 @@ Téléchargez la dernière version sur la [page des Releases](https://github.com
 - **1 à 8 joueurs par équipe** (configurable par arène).
 - **Lobby d'attente** : la partie démarre automatiquement dès qu'il y a au
   moins 2 joueurs au total (seuil configurable par arène).
+- **Countdown de début (30s)** : compte à rebours avec annonces et sons avant le
+  début de la partie, annulable si un joueur quitte.
 - **Diamant admin** : un joueur avec la permission `arenapvp.admin` reçoit
   un diamant spécial en slot 0 de la hotbar pendant l'attente en lobby ;
   un clic dessus lance la partie immédiatement, sans attendre le minimum.
-- **Kit de combat** : épée en pierre + arc (avec une flèche dédiée qui ne se
-  consomme jamais) + **armure en cuir complète teintée de la couleur de
-  l'équipe** (casque, plastron, jambières, bottes). Épée, arc et armure sont
-  **incassables** (`unbreakable`). Aucune de ces pièces ne peut être lâchée
-  (drop), déplacée dans l'inventaire, ou échangée entre les mains.
+- **Kit de combat** : épée en pierre + arc (avec **enchantement INFINITY** pour une
+  flèche infinie) + **armure en cuir complète teintée de la couleur de l'équipe**
+  (casque, plastron, jambières, bottes). Épée, arc et armure sont **incassables**
+  (`unbreakable`). Aucune de ces pièces ne peut être lâchée (drop), déplacée dans
+  l'inventaire, ou échangée entre les mains.
 - **Flèche toujours disponible** : en plus de la restauration immédiate après
   chaque tir, une vérification de sécurité tourne en tâche de fond (2x/sec)
   pour garantir qu'un joueur en partie a toujours au moins une flèche dans son
@@ -48,6 +51,10 @@ Téléchargez la dernière version sur la [page des Releases](https://github.com
   temps réel, pour chaque équipe, ses points et le total des dégâts infligés
   durant la partie. Affiché dès le lobby d'attente (avec le nombre de joueurs)
   puis pendant toute la partie.
+- **Pause après un point (5s)** : après chaque point marqué, tous les joueurs
+  sont retéléportés à leur base, les kits retirés, et un compte à rebours de
+  5 secondes s'affiche avant la reprise du combat. **Aucun kill ni mouvement
+  n'est possible pendant cette pause.**
 - **Élimination par chute dans le vide** : si un joueur descend sous la
   hauteur Y définie pour l'arène, il est éliminé et un point est attribué à
   l'équipe adverse (à l'équipe qui l'a poussé/touché en dernier si identifiable,

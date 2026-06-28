@@ -305,6 +305,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
     }
 
     private void handleStats(CommandSender sender, String[] args) {
+        // Accessible a tous les joueurs, pas besoin de permission admin
         StatsManager stats = plugin.getStatsManager();
 
         UUID targetUuid;

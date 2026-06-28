@@ -4,6 +4,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
+import org.bukkit.Sound;
 import org.bukkit.entity.Arrow;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
@@ -27,64 +28,34 @@ import java.util.UUID;
 
 /**
  * Ecoute tous les evenements de jeu necessaires :
- * - mort par joueur ou par chute dans le vide -> attribution de point
- * - interdiction de drop / deplacement des armes du kit
- * - cooldown de tir a l'arc (3s) avec fleche "infinie" fournie virtuellement
+ * - mort par joueur ou par chute dans le vide -> attribution de point + reteleportation
+ * - interdiction de drop / deplacement des armes du kit ET du diamant admin
+ * - cooldown de tir a l'arc (3s) — l'arc a l'enchantement INFINITY, pas besoin de fleche
  * - deconnexion en cours de partie
- * - utilisation du diamant admin (voir AdminItemListener)
+ * - blocage des actions pendant la pause apres un point
  */
 public class GameListener implements Listener {
 
     private final ArenaPvPPlugin plugin;
     private final ArenaManager manager;
 
-    // Cooldown de tir par joueur (uuid -> true si en cooldown)
+    // Cooldown de tir par joueur
     private final Set<UUID> bowOnCooldown = new HashSet<>();
 
-    // Suivi de la derniere entite qui a degat un joueur, pour attribuer le point en cas de mort par chute
-    // juste apres avoir ete touche (evite qu'une chute provoquee par un coup d'epee compte comme "suicide")
+    // Suivi de la derniere entite qui a inflige des degats, pour les kills par chute
     private final Map<UUID, UUID> lastDamager = new HashMap<>();
     private final Map<UUID, Long> lastDamageTime = new HashMap<>();
     private static final long ASSIST_WINDOW_MS = 5000L;
 
-    // Joueurs dont la mort par le vide est en cours de traitement : permet d'eviter
-    // qu'onDeath() ne recompte un second point quand le damage(1000) qui suit
-    // declenche le veritable PlayerDeathEvent.
+    // Joueurs dont la mort par le vide est en cours de traitement
     private final Set<UUID> processingVoidDeath = new HashSet<>();
 
     public GameListener(ArenaPvPPlugin plugin) {
         this.plugin = plugin;
         this.manager = plugin.getArenaManager();
-        startArrowHeartbeat();
     }
 
-    /**
-     * Tache de fond qui verifie regulierement (toutes les 0.5s) que chaque joueur en partie
-     * possede bien une fleche dans son inventaire. C'est une securite supplementaire en plus de
-     * la restauration faite juste apres chaque tir (onShootBow) : meme si la fleche venait a
-     * manquer pour une raison quelconque, le joueur ne reste jamais bloque sans pouvoir tirer.
-     */
-    private void startArrowHeartbeat() {
-        Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-            for (Player player : plugin.getServer().getOnlinePlayers()) {
-                Arena arena = manager.getArenaOf(player.getUniqueId());
-                if (arena == null || arena.getState() != Arena.State.RUNNING) continue;
-
-                boolean hasArrow = false;
-                for (ItemStack stack : player.getInventory().getStorageContents()) {
-                    if (stack != null && stack.getType() == Material.ARROW) {
-                        hasArrow = true;
-                        break;
-                    }
-                }
-                if (!hasArrow) {
-                    player.getInventory().setItem(8, ArenaManager.createArenaArrow());
-                }
-            }
-        }, 20L, 10L);
-    }
-
-    // ---------------- Suivi des degats pour determiner l'auteur d'un kill ----------------
+    // ---------------- Suivi des degats ----------------
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onDamage(EntityDamageByEntityEvent event) {
@@ -92,6 +63,12 @@ public class GameListener implements Listener {
 
         Arena arena = manager.getArenaOf(victim.getUniqueId());
         if (arena == null || arena.getState() != Arena.State.RUNNING) return;
+
+        // Bloquer les degats pendant la pause post-point
+        if (manager.isArenaPaused(arena)) {
+            event.setCancelled(true);
+            return;
+        }
 
         Player damager = resolveDamagerPlayer(event.getDamager());
         if (damager == null) return;
@@ -101,7 +78,6 @@ public class GameListener implements Listener {
         lastDamager.put(victim.getUniqueId(), damager.getUniqueId());
         lastDamageTime.put(victim.getUniqueId(), System.currentTimeMillis());
 
-        // Comptabilise les degats infliges par l'equipe de l'attaquant pour le sidebar
         int damagerTeam = arena.getTeamOf(damager.getUniqueId());
         int victimTeam = arena.getTeamOf(victim.getUniqueId());
         if (damagerTeam != -1 && damagerTeam != victimTeam) {
@@ -126,12 +102,9 @@ public class GameListener implements Listener {
         Arena arena = manager.getArenaOf(victim.getUniqueId());
         if (arena == null || arena.getState() != Arena.State.RUNNING) return;
 
-        // On annule les drops et garde le format de message simple
         event.getDrops().clear();
         event.setDroppedExp(0);
 
-        // Mort deja entierement traitee par handleVoidDeath (point attribue, message envoye) :
-        // on se contente de ne rien dropper / pas de message vanilla, sans recompter de point.
         if (processingVoidDeath.remove(victim.getUniqueId())) {
             event.setDeathMessage(null);
             return;
@@ -162,8 +135,6 @@ public class GameListener implements Listener {
 
         lastDamager.remove(victim.getUniqueId());
         lastDamageTime.remove(victim.getUniqueId());
-
-        // Respawn immediat dans l'arene (voir onRespawn)
     }
 
     @EventHandler
@@ -178,9 +149,9 @@ public class GameListener implements Listener {
             if (spawn != null) {
                 event.setRespawnLocation(spawn);
             }
-            // On redonne le kit juste apres le respawn effectif
+            // On redonner le kit apres le respawn seulement si la partie n'est pas en pause
             plugin.getServer().getScheduler().scheduleSyncDelayedTask(plugin, () -> {
-                if (player.isOnline()) {
+                if (player.isOnline() && !manager.isArenaPaused(arena)) {
                     manager.giveKit(player, arena);
                 }
             }, 1L);
@@ -195,6 +166,7 @@ public class GameListener implements Listener {
         Arena arena = manager.getArenaOf(player.getUniqueId());
         if (arena == null || arena.getState() != Arena.State.RUNNING) return;
         if (!arena.hasVoidY()) return;
+        if (manager.isArenaPaused(arena)) return;
 
         if (player.getLocation().getY() < arena.getVoidY()) {
             handleVoidDeath(player, arena);
@@ -218,9 +190,6 @@ public class GameListener implements Listener {
             }
         }
 
-        // Pas d'auteur recent identifie : on attribue le point a "l'equipe adverse" la plus simple
-        // -> dans une arene a 2 equipes, c'est immediat. Dans une arene a 3-4 equipes sans agresseur connu,
-        // on n'attribue le point a personne pour rester juste (le joueur est tout de meme elimine).
         if (scoringTeam == null && arena.getTeamCount() == 2) {
             scoringTeam = 1 - victimTeam;
         }
@@ -235,24 +204,25 @@ public class GameListener implements Listener {
         lastDamager.remove(player.getUniqueId());
         lastDamageTime.remove(player.getUniqueId());
 
-        // On marque cette mort comme deja traitee (point deja attribue / message deja envoye)
-        // avant de declencher le veritable PlayerDeathEvent via damage(), pour qu'onDeath()
-        // ne recompte pas un second point pour la meme chute.
         processingVoidDeath.add(player.getUniqueId());
         player.setHealth(0.0001);
         player.damage(1000.0);
     }
 
-    // ---------------- Anti-drop / anti-deplacement des armes du kit ----------------
+    // ---------------- Anti-drop / anti-deplacement du kit ET du diamant admin ----------------
 
     @EventHandler
     public void onDrop(PlayerDropItemEvent event) {
         Player player = event.getPlayer();
         Arena arena = manager.getArenaOf(player.getUniqueId());
-        if (arena == null || arena.getState() != Arena.State.RUNNING) return;
+        if (arena == null) return;
 
         ItemStack item = event.getItemDrop().getItemStack();
-        if (isKitItem(item)) {
+        // En lobby : bloquer le drop du diamant admin
+        // En partie : bloquer le drop de tout item du kit
+        if (arena.getState() == Arena.State.WAITING && isAdminDiamond(item)) {
+            event.setCancelled(true);
+        } else if (arena.getState() == Arena.State.RUNNING && isKitItem(item)) {
             event.setCancelled(true);
         }
     }
@@ -261,12 +231,23 @@ public class GameListener implements Listener {
     public void onInventoryClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
         Arena arena = manager.getArenaOf(player.getUniqueId());
-        if (arena == null || arena.getState() != Arena.State.RUNNING) return;
+        if (arena == null) return;
 
         ItemStack current = event.getCurrentItem();
         ItemStack cursor = event.getCursor();
-        if (isKitItem(current) || isKitItem(cursor)) {
-            event.setCancelled(true);
+
+        if (arena.getState() == Arena.State.WAITING) {
+            // Bloquer tout mouvement du diamant admin en lobby
+            if (isAdminDiamond(current) || isAdminDiamond(cursor)) {
+                event.setCancelled(true);
+                return;
+            }
+        }
+
+        if (arena.getState() == Arena.State.RUNNING) {
+            if (isKitItem(current) || isKitItem(cursor)) {
+                event.setCancelled(true);
+            }
         }
     }
 
@@ -274,11 +255,28 @@ public class GameListener implements Listener {
     public void onSwapHands(PlayerSwapHandItemsEvent event) {
         Player player = event.getPlayer();
         Arena arena = manager.getArenaOf(player.getUniqueId());
-        if (arena == null || arena.getState() != Arena.State.RUNNING) return;
+        if (arena == null) return;
 
-        if (isKitItem(event.getMainHandItem()) || isKitItem(event.getOffHandItem())) {
-            event.setCancelled(true);
+        if (arena.getState() == Arena.State.WAITING) {
+            if (isAdminDiamond(event.getMainHandItem()) || isAdminDiamond(event.getOffHandItem())) {
+                event.setCancelled(true);
+                return;
+            }
         }
+
+        if (arena.getState() == Arena.State.RUNNING) {
+            if (isKitItem(event.getMainHandItem()) || isKitItem(event.getOffHandItem())) {
+                event.setCancelled(true);
+            }
+        }
+    }
+
+    /** Verifie si l'item est le diamant de lancement admin (par son nom). */
+    private boolean isAdminDiamond(ItemStack item) {
+        if (item == null || item.getType() != Material.DIAMOND) return false;
+        if (!item.hasItemMeta()) return false;
+        var meta = item.getItemMeta();
+        return meta.hasDisplayName() && meta.getDisplayName().contains("Lancer la partie maintenant");
     }
 
     private boolean isKitItem(ItemStack item) {
@@ -289,7 +287,7 @@ public class GameListener implements Listener {
                 || type == Material.LEATHER_LEGGINGS || type == Material.LEATHER_BOOTS;
     }
 
-    // ---------------- Arc : cooldown 3s + fleche "infinie" ----------------
+    // ---------------- Arc : cooldown 3s + enchantement INFINITY ----------------
 
     @EventHandler
     public void onShootBow(EntityShootBowEvent event) {
@@ -297,35 +295,25 @@ public class GameListener implements Listener {
         Arena arena = manager.getArenaOf(player.getUniqueId());
         if (arena == null || arena.getState() != Arena.State.RUNNING) return;
 
-        if (bowOnCooldown.contains(player.getUniqueId())) {
+        // Bloquer le tir pendant la pause post-point
+        if (manager.isArenaPaused(arena)) {
             event.setCancelled(true);
             return;
         }
 
-        // On consume une fleche "virtuelle" : pas besoin d'en avoir dans l'inventaire,
-        // et on s'assure qu'aucune fleche ne reste a ramasser/droppee.
-        // Paper 1.21+ utilise shouldConsumeItem() au lieu de getConsumeItem()
-        try {
-            if (event.getClass().getMethod("shouldConsumeItem").invoke(event).equals(true)) {
-                event.getClass().getMethod("setConsumeItem", boolean.class).invoke(event, false);
-            }
-        } catch (Exception ignored) {}
+        if (bowOnCooldown.contains(player.getUniqueId())) {
+            event.setCancelled(true);
+            player.sendMessage(ChatColor.RED + "Arc en rechargement...");
+            return;
+        }
+
+        // L'arc a l'enchantement INFINITY : ne pas consommer la fleche
+        event.setConsumeItem(false);
         if (event.getProjectile() instanceof Arrow arrow) {
             arrow.setPickupStatus(Arrow.PickupStatus.DISALLOWED);
         }
 
         startBowCooldown(player);
-
-        // Securite : si la fleche du slot 8 a malgre tout ete consommee, on la restaure
-        // au tick suivant pour garantir un tir infini (voir aussi startArrowHeartbeat, qui
-        // verifie en plus regulierement l'inventaire complet en cas de cas limite).
-        plugin.getServer().getScheduler().scheduleSyncDelayedTask(plugin, () -> {
-            if (!player.isOnline()) return;
-            ItemStack slot8 = player.getInventory().getItem(8);
-            if (slot8 == null || slot8.getType() != Material.ARROW) {
-                player.getInventory().setItem(8, ArenaManager.createArenaArrow());
-            }
-        }, 1L);
     }
 
     private void startBowCooldown(Player player) {
@@ -349,7 +337,6 @@ public class GameListener implements Listener {
                     cancel();
                     return;
                 }
-                // Affiche une jauge de cooldown visuelle native (1.21) sur l'icone de l'arc
                 int ticks = remaining * 20;
                 player.setCooldown(Material.BOW, ticks);
                 remaining--;
@@ -374,7 +361,7 @@ public class GameListener implements Listener {
         manager.broadcastToArena(arena, ChatColor.GRAY + player.getName() + " a quitte la partie.");
     }
 
-    // ---------------- Empecher la faim de baisser pendant les parties (confort) ----------------
+    // ---------------- Empecher la faim de baisser pendant les parties ----------------
 
     @EventHandler
     public void onFoodLevelChange(org.bukkit.event.entity.FoodLevelChangeEvent event) {
