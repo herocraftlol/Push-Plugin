@@ -1,0 +1,31 @@
+# =========================================================
+#  ArenaPvP - configuration
+#  Les arenes sont normalement creees/editees via les
+#  commandes en jeu (/arena ...). Ce fichier est ecrit et
+#  relu automatiquement par le plugin.
+# =========================================================
+
+# Points necessaires pour gagner une partie
+points-to-win: 5
+
+# Temps de recharge de l'arc, en secondes
+bow-cooldown-seconds: 3
+
+# Delai (secondes) avant teleportation de retour apres la fin d'une partie
+end-delay-seconds: 5
+
+# Couleurs des equipes dans l'ordre : equipe 1, equipe 2, equipe 3, equipe 4
+# Valeurs possibles : n'importe quelle ChatColor Bukkit (ex: PINK, MAGENTA, DARK_PURPLE, DARK_BLUE)
+team-colors:
+  - PINK
+  - MAGENTA
+  - DARK_PURPLE
+  - DARK_BLUE
+
+team-display-names:
+  - "Rose"
+  - "Magenta"
+  - "Violet"
+  - "Bleu fonce"
+
+arenas: {}

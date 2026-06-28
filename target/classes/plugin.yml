@@ -1,0 +1,21 @@
+name: ArenaPvP
+version: '1.0.0'
+main: com.arenapvp.plugin.ArenaPvPPlugin
+api-version: '1.21'
+author: ArenaPvP
+description: Mini-jeu PvP par equipes en arene avec vide, lobby d'attente et kit fixe.
+
+commands:
+  arena:
+    description: Commande principale du plugin ArenaPvP
+    usage: /arena <create|delete|setspawn|setlobby|setvoid|setteams|setteamsize|setminplayers|list|info|join|leave|forcestart|reload>
+    permission: arenapvp.admin
+    permission-message: "§cTu n'as pas la permission d'utiliser cette commande."
+
+permissions:
+  arenapvp.admin:
+    description: Permet de configurer les arenes et de forcer le demarrage des parties
+    default: op
+  arenapvp.play:
+    description: Permet de rejoindre une arene
+    default: true
