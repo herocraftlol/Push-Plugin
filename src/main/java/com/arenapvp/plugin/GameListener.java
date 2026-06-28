@@ -158,13 +158,46 @@ public class GameListener implements Listener {
         }
     }
 
-    // ---------------- Chute dans le vide ----------------
+    // ---------------- Chute dans le vide + blocage mouvement ----------------
 
     @EventHandler
     public void onMove(PlayerMoveEvent event) {
         Player player = event.getPlayer();
         Arena arena = manager.getArenaOf(player.getUniqueId());
-        if (arena == null || arena.getState() != Arena.State.RUNNING) return;
+        if (arena == null) return;
+
+        // Bloquer le mouvement pendant le compte a rebours pre-partie (WAITING avec countdown)
+        if (arena.getState() == Arena.State.WAITING && manager.isPreGameCountdownRunning(arena)) {
+            // Autoriser uniquement la rotation de la tete, pas le deplacement
+            org.bukkit.Location from = event.getFrom();
+            org.bukkit.Location to = event.getTo();
+            if (to != null && (Double.compare(from.getX(), to.getX()) != 0
+                    || Double.compare(from.getY(), to.getY()) != 0
+                    || Double.compare(from.getZ(), to.getZ()) != 0)) {
+                event.setTo(from.clone().setDirection(to.toVector().subtract(from.toVector())));
+                // Reteleporter a la position de lobby pour etre sur
+                to.setX(from.getX());
+                to.setY(from.getY());
+                to.setZ(from.getZ());
+                event.setCancelled(true);
+            }
+            return;
+        }
+
+        if (arena.getState() != Arena.State.RUNNING) return;
+
+        // Bloquer le mouvement pendant la pause post-point (5s countdown)
+        if (manager.isArenaPaused(arena)) {
+            org.bukkit.Location from = event.getFrom();
+            org.bukkit.Location to = event.getTo();
+            if (to != null && (Double.compare(from.getX(), to.getX()) != 0
+                    || Double.compare(from.getY(), to.getY()) != 0
+                    || Double.compare(from.getZ(), to.getZ()) != 0)) {
+                event.setCancelled(true);
+            }
+            return;
+        }
+
         if (!arena.hasVoidY()) return;
         if (manager.isArenaPaused(arena)) return;
 
@@ -287,7 +320,7 @@ public class GameListener implements Listener {
                 || type == Material.LEATHER_LEGGINGS || type == Material.LEATHER_BOOTS;
     }
 
-    // ---------------- Arc : cooldown 3s + enchantement INFINITY ----------------
+    // ---------------- Arc : cooldown 3s + fleche infinie ----------------
 
     @EventHandler
     public void onShootBow(EntityShootBowEvent event) {
@@ -307,11 +340,22 @@ public class GameListener implements Listener {
             return;
         }
 
-        // L'arc a l'enchantement INFINITY : ne pas consommer la fleche
+        // Ne pas consommer la fleche
         event.setConsumeItem(false);
         if (event.getProjectile() instanceof Arrow arrow) {
             arrow.setPickupStatus(Arrow.PickupStatus.DISALLOWED);
         }
+
+        // Reassurer la presence de la fleche au slot 8 au prochain tick
+        // (certaines versions de Bukkit consomment quand meme la fleche avant setConsumeItem)
+        plugin.getServer().getScheduler().scheduleSyncDelayedTask(plugin, () -> {
+            if (player.isOnline()) {
+                ItemStack slot8 = player.getInventory().getItem(8);
+                if (slot8 == null || slot8.getType() != org.bukkit.Material.ARROW) {
+                    player.getInventory().setItem(8, ArenaManager.createArenaArrow());
+                }
+            }
+        }, 1L);
 
         startBowCooldown(player);
     }

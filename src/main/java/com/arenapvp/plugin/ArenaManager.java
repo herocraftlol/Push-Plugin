@@ -162,6 +162,11 @@ public class ArenaManager {
         return arenasPaused.contains(arena.getName().toLowerCase());
     }
 
+    /** Retourne true si le compte a rebours pre-partie (30s) est en cours pour cette arene. */
+    public boolean isPreGameCountdownRunning(Arena arena) {
+        return startCountdownTasks.containsKey(arena.getName().toLowerCase());
+    }
+
     // ================= Cycle de vie =================
 
     /**
@@ -518,7 +523,7 @@ public class ArenaManager {
 
         arenasPaused.add(key);
 
-        // Reteleporter tous les joueurs et leur retirer le kit (etat neutre)
+        // Reteleporter tous les joueurs et leur retirer le kit + immobiliser
         for (Map.Entry<UUID, Integer> entry : new HashMap<>(arena.getPlayerTeamMap()).entrySet()) {
             Player p = Bukkit.getPlayer(entry.getKey());
             if (p == null) continue;
@@ -530,35 +535,41 @@ public class ArenaManager {
             p.setHealth(20.0);
             p.setFoodLevel(20);
             p.setFireTicks(0);
+            // Immobiliser le joueur pendant le countdown
+            p.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 6 * 20, 200, false, false, false));
             // Son de point marque
             p.playSound(p.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.2f);
         }
 
         int[] remaining = {5};
+        // Utiliser un tableau pour capturer le taskId dans le lambda
+        int[] taskIdHolder = {-1};
+
         int taskId = Bukkit.getScheduler().scheduleSyncRepeatingTask(plugin, () -> {
             int r = remaining[0];
 
             if (arena.getState() != Arena.State.RUNNING) {
                 arenasPaused.remove(key);
-                Integer t = pointResumeTasks.remove(key);
-                if (t != null) Bukkit.getScheduler().cancelTask(t);
+                pointResumeTasks.remove(key);
+                Bukkit.getScheduler().cancelTask(taskIdHolder[0]);
                 return;
             }
 
             if (r <= 0) {
                 arenasPaused.remove(key);
                 pointResumeTasks.remove(key);
-                // Redonner le kit a tout le monde
+                // Retirer l'effet de ralentissement et redonner le kit a tout le monde
                 for (UUID uuid : new ArrayList<>(arena.getPlayerTeamMap().keySet())) {
                     Player p = Bukkit.getPlayer(uuid);
                     if (p != null) {
+                        p.removePotionEffect(PotionEffectType.SLOWNESS);
                         giveKit(p, arena);
                         p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.5f);
                     }
                 }
                 broadcastToArena(arena, ChatColor.GREEN + "" + ChatColor.BOLD + "COMBAT !");
-                // On annule la tache de l'interieur via return (la tache se termine naturellement)
-                Bukkit.getScheduler().cancelTask(pointResumeTasks.getOrDefault(key, -1));
+                // Annuler la tache via son vrai ID capture
+                Bukkit.getScheduler().cancelTask(taskIdHolder[0]);
                 return;
             }
 
@@ -572,6 +583,7 @@ public class ArenaManager {
             remaining[0]--;
         }, 20L, 20L);
 
+        taskIdHolder[0] = taskId;
         pointResumeTasks.put(key, taskId);
     }
 
