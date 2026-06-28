@@ -5,13 +5,13 @@ import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.UUID;
+import java.util.*;
 import java.util.logging.Level;
+import java.util.stream.Collectors;
 
 /**
- * Gere les statistiques persistantes des joueurs (nombre de victoires et
- * d'eliminations cumulees sur toutes les arenes), stockees dans stats.yml
- * a la racine du dossier du plugin.
+ * Gere les statistiques persistantes des joueurs (victoires, eliminations, degats totaux),
+ * stockees dans stats.yml.
  */
 public class StatsManager {
 
@@ -25,13 +25,9 @@ public class StatsManager {
     }
 
     public void load() {
-        if (!plugin.getDataFolder().exists()) {
-            plugin.getDataFolder().mkdirs();
-        }
+        if (!plugin.getDataFolder().exists()) plugin.getDataFolder().mkdirs();
         if (!file.exists()) {
-            try {
-                file.createNewFile();
-            } catch (IOException e) {
+            try { file.createNewFile(); } catch (IOException e) {
                 plugin.getLogger().log(Level.WARNING, "Impossible de creer stats.yml", e);
             }
         }
@@ -40,18 +36,13 @@ public class StatsManager {
 
     public void save() {
         if (config == null) return;
-        try {
-            config.save(file);
-        } catch (IOException e) {
+        try { config.save(file); } catch (IOException e) {
             plugin.getLogger().log(Level.WARNING, "Impossible de sauvegarder stats.yml", e);
         }
     }
 
-    private String basePath(UUID uuid) {
-        return "players." + uuid;
-    }
+    private String basePath(UUID uuid) { return "players." + uuid; }
 
-    /** Incremente le nombre d'eliminations du joueur et persiste immediatement. */
     public void addKill(UUID uuid, String name) {
         int kills = getKills(uuid) + 1;
         config.set(basePath(uuid) + ".kills", kills);
@@ -59,7 +50,6 @@ public class StatsManager {
         save();
     }
 
-    /** Incremente le nombre de victoires du joueur et persiste immediatement. */
     public void addWin(UUID uuid, String name) {
         int wins = getWins(uuid) + 1;
         config.set(basePath(uuid) + ".wins", wins);
@@ -67,31 +57,50 @@ public class StatsManager {
         save();
     }
 
-    public int getKills(UUID uuid) {
-        return config.getInt(basePath(uuid) + ".kills", 0);
+    /** Ajoute des degats au total cumule d'un joueur pour toutes ses parties. */
+    public void addDamage(UUID uuid, String name, double amount) {
+        double total = getDamage(uuid) + amount;
+        config.set(basePath(uuid) + ".damage", total);
+        config.set(basePath(uuid) + ".name", name);
+        save();
     }
 
-    public int getWins(UUID uuid) {
-        return config.getInt(basePath(uuid) + ".wins", 0);
-    }
+    public int getKills(UUID uuid) { return config.getInt(basePath(uuid) + ".kills", 0); }
+    public int getWins(UUID uuid) { return config.getInt(basePath(uuid) + ".wins", 0); }
+    public double getDamage(UUID uuid) { return config.getDouble(basePath(uuid) + ".damage", 0.0); }
 
-    /**
-     * Recherche l'UUID associe a un pseudo deja vu par le plugin (joueur deja
-     * connecte au moins une fois alors qu'il etait dans une arene).
-     * Retourne null si introuvable.
-     */
     public UUID findUuidByName(String name) {
         ConfigurationSection players = config.getConfigurationSection("players");
         if (players == null) return null;
         for (String key : players.getKeys(false)) {
             String stored = players.getString(key + ".name", "");
             if (stored.equalsIgnoreCase(name)) {
-                try {
-                    return UUID.fromString(key);
-                } catch (IllegalArgumentException ignored) {
-                }
+                try { return UUID.fromString(key); } catch (IllegalArgumentException ignored) {}
             }
         }
         return null;
+    }
+
+    public enum StatType { KILLS, WINS, DAMAGE }
+
+    public record LeaderboardEntry(String name, double value) {}
+
+    /** Retourne le top N des joueurs pour la stat demandee, tries par valeur decroissante. */
+    public List<LeaderboardEntry> getTopPlayers(StatType type, int limit) {
+        ConfigurationSection players = config.getConfigurationSection("players");
+        if (players == null) return Collections.emptyList();
+
+        List<LeaderboardEntry> entries = new ArrayList<>();
+        for (String key : players.getKeys(false)) {
+            String name = players.getString(key + ".name", "Inconnu");
+            double value = switch (type) {
+                case KILLS  -> players.getInt(key + ".kills", 0);
+                case WINS   -> players.getInt(key + ".wins", 0);
+                case DAMAGE -> players.getDouble(key + ".damage", 0.0);
+            };
+            entries.add(new LeaderboardEntry(name, value));
+        }
+        entries.sort(Comparator.comparingDouble(LeaderboardEntry::value).reversed());
+        return entries.stream().limit(limit).collect(Collectors.toList());
     }
 }

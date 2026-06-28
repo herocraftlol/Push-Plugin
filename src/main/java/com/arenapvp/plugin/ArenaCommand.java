@@ -1,7 +1,10 @@
 package com.arenapvp.plugin;
 
-import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
+import org.bukkit.*;
+import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
+import org.bukkit.block.Sign;
+import org.bukkit.block.data.type.WallSign;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -47,6 +50,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
             case "forcestart" -> handleForceStart(sender, args);
             case "setpos1" -> handleSetPos(sender, args, 1);
             case "setpos2" -> handleSetPos(sender, args, 2);
+            case "leaderboard" -> handleLeaderboard(sender, args);
             case "reload" -> handleReload(sender);
             default -> sendHelp(sender);
         }
@@ -361,10 +365,116 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
 
         int wins = stats.getWins(targetUuid);
         int kills = stats.getKills(targetUuid);
+        int damage = (int) Math.round(stats.getDamage(targetUuid));
 
         sender.sendMessage(ChatColor.GOLD + "=== Statistiques de " + ChatColor.YELLOW + targetName + ChatColor.GOLD + " ===");
         sender.sendMessage(ChatColor.GRAY + "Victoires : " + ChatColor.GREEN + wins);
         sender.sendMessage(ChatColor.GRAY + "Eliminations : " + ChatColor.RED + kills);
+        sender.sendMessage(ChatColor.GRAY + "Degats totaux infliges : " + ChatColor.YELLOW + damage);
+    }
+
+    private void handleLeaderboard(CommandSender sender, String[] args) {
+        if (!requirePlayerAdmin(sender)) return;
+        Player player = (Player) sender;
+
+        if (args.length < 2) {
+            sender.sendMessage(ChatColor.RED + "Usage: /arena leaderboard <kills|wins|damage>");
+            return;
+        }
+
+        StatsManager.StatType type;
+        String typeName;
+        switch (args[1].toLowerCase()) {
+            case "kills" -> { type = StatsManager.StatType.KILLS; typeName = "Eliminations"; }
+            case "wins"  -> { type = StatsManager.StatType.WINS;  typeName = "Victoires"; }
+            case "damage"-> { type = StatsManager.StatType.DAMAGE; typeName = "Degats"; }
+            default -> {
+                sender.sendMessage(ChatColor.RED + "Type invalide. Utilise kills, wins ou damage.");
+                return;
+            }
+        }
+
+        StatsManager stats = plugin.getStatsManager();
+        List<StatsManager.LeaderboardEntry> top = stats.getTopPlayers(type, 4);
+
+        // Placer un panneau au mur devant le joueur
+        Block target = player.getTargetBlockExact(5);
+        Block signBlock;
+        BlockFace face;
+
+        if (target != null && target.getType().isSolid()) {
+            // Panneau mural sur la face regardee
+            face = getPlayerFacing(player);
+            Block adjacent = target.getRelative(face);
+            if (adjacent.getType() == Material.AIR) {
+                signBlock = adjacent;
+            } else {
+                sender.sendMessage(ChatColor.RED + "Pas de place pour placer le panneau ici.");
+                return;
+            }
+        } else {
+            sender.sendMessage(ChatColor.RED + "Regarde un mur pour placer le panneau leaderboard.");
+            return;
+        }
+
+        Material signMat = Material.OAK_WALL_SIGN;
+        signBlock.setType(signMat);
+
+        org.bukkit.block.data.BlockData bd = signBlock.getBlockData();
+        if (bd instanceof WallSign ws) {
+            ws.setFacing(face);
+            signBlock.setBlockData(ws);
+        }
+
+        Sign sign = (Sign) signBlock.getState();
+        String medal = switch (type) {
+            case KILLS  -> "\u2694 TOP KILLS";
+            case WINS   -> "\u2605 TOP WINS";
+            case DAMAGE -> "\u2763 TOP DAMAGE";
+        };
+        sign.setLine(0, ChatColor.GOLD + "" + ChatColor.BOLD + medal);
+        for (int i = 0; i < Math.min(top.size(), 3); i++) {
+            StatsManager.LeaderboardEntry e = top.get(i);
+            String prefix = switch (i) { case 0 -> ChatColor.GOLD+"#1 "; case 1 -> ChatColor.GRAY+"#2 "; default -> ChatColor.RED+"#3 "; };
+            String valStr = (type == StatsManager.StatType.DAMAGE)
+                    ? String.valueOf((int)Math.round(e.value()))
+                    : String.valueOf((int)e.value());
+            sign.setLine(i + 1, prefix + e.name() + " " + valStr);
+        }
+        sign.update();
+
+        // Afficher aussi le top 5 en chat + stats du demandeur
+        sender.sendMessage(ChatColor.GOLD + "=== Leaderboard : " + typeName + " ===");
+        String[] medals = {"\u2741 ", "\u2742 ", "\u2743 ", "\u2744 ", "\u2745 "};
+        for (int i = 0; i < top.size(); i++) {
+            StatsManager.LeaderboardEntry e = top.get(i);
+            String valStr = (type == StatsManager.StatType.DAMAGE)
+                    ? String.valueOf((int)Math.round(e.value()))
+                    : String.valueOf((int)e.value());
+            ChatColor col = switch (i) { case 0 -> ChatColor.GOLD; case 1 -> ChatColor.GRAY; case 2 -> ChatColor.RED; default -> ChatColor.WHITE; };
+            sender.sendMessage(col + "#" + (i+1) + " " + e.name() + ChatColor.WHITE + " - " + valStr);
+        }
+        // Stats perso du joueur qui execute la commande
+        double myVal = switch (type) {
+            case KILLS  -> stats.getKills(player.getUniqueId());
+            case WINS   -> stats.getWins(player.getUniqueId());
+            case DAMAGE -> stats.getDamage(player.getUniqueId());
+        };
+        String myValStr = (type == StatsManager.StatType.DAMAGE)
+                ? String.valueOf((int)Math.round(myVal))
+                : String.valueOf((int)myVal);
+        sender.sendMessage(ChatColor.AQUA + "Tes " + typeName.toLowerCase() + " : " + ChatColor.WHITE + myValStr);
+        sender.sendMessage(ChatColor.GREEN + "Panneau place devant toi.");
+    }
+
+    /** Retourne la direction a laquelle fait face le joueur (pour mur sign). */
+    private BlockFace getPlayerFacing(Player player) {
+        float yaw = player.getLocation().getYaw();
+        if (yaw < 0) yaw += 360;
+        if (yaw < 45 || yaw >= 315) return BlockFace.SOUTH;
+        if (yaw < 135) return BlockFace.WEST;
+        if (yaw < 225) return BlockFace.NORTH;
+        return BlockFace.EAST;
     }
 
     private void handleForceStart(CommandSender sender, String[] args) {
@@ -433,6 +543,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(ChatColor.YELLOW + "/arena setteamsize <nom> <1-8>");
             sender.sendMessage(ChatColor.YELLOW + "/arena setminplayers <nom> <min>");
             sender.sendMessage(ChatColor.YELLOW + "/arena forcestart [nom]");
+            sender.sendMessage(ChatColor.YELLOW + "/arena leaderboard <kills|wins|damage>" + ChatColor.GRAY + " - panneau top joueurs");
             sender.sendMessage(ChatColor.YELLOW + "/arena reload");
         }
     }
@@ -444,7 +555,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
         List<String> subs = new ArrayList<>(List.of("list", "info", "join", "leave", "stats"));
         if (sender.hasPermission("arenapvp.admin")) {
             subs.addAll(List.of("create", "delete", "setlobby", "setspawn", "setvoid",
-                    "setteams", "setteamsize", "setminplayers", "forcestart", "setpos1", "setpos2", "reload"));
+                    "setteams", "setteamsize", "setminplayers", "forcestart", "setpos1", "setpos2", "leaderboard", "reload"));
         }
 
         if (args.length == 1) {
@@ -469,6 +580,11 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
         }
         if (args.length == 3 && args[0].equalsIgnoreCase("setteamsize")) {
             return List.of("1", "2", "3", "4", "5", "6", "7", "8");
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("leaderboard")) {
+            return List.of("kills", "wins", "damage").stream()
+                    .filter(s -> s.startsWith(args[1].toLowerCase()))
+                    .collect(Collectors.toList());
         }
 
         return Collections.emptyList();

@@ -403,6 +403,8 @@ public class ArenaManager {
         for (Player p : getOnlinePlayersInArena(arena)) {
             p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
         }
+
+        updateTabList(arena);
     }
 
     private void teleportToTeamSpawn(Player player, Arena arena, int team) {
@@ -506,6 +508,7 @@ public class ArenaManager {
         int pointsToWin = plugin.getConfig().getInt("points-to-win", 5);
         int newScore = arena.addPoint(scoringTeam);
         updateSidebar(arena);
+        updateTabList(arena);
 
         ChatColor color = getTeamColor(arena, scoringTeam);
         String teamName = getTeamDisplayName(arena, scoringTeam);
@@ -547,12 +550,12 @@ public class ArenaManager {
             p.setFoodLevel(20);
             p.setFireTicks(0);
             // Immobiliser le joueur pendant le countdown
-            p.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 6 * 20, 200, false, false, false));
+            p.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 4 * 20, 200, false, false, false));
             // Son de point marque
             p.playSound(p.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.2f);
         }
 
-        int[] remaining = {5};
+        int[] remaining = {3};
         // Utiliser un tableau pour capturer le taskId dans le lambda
         int[] taskIdHolder = {-1};
 
@@ -579,6 +582,7 @@ public class ArenaManager {
                     }
                 }
                 broadcastToArena(arena, ChatColor.GREEN + "" + ChatColor.BOLD + "COMBAT !");
+                updateTabList(arena);
                 // Annuler la tache via son vrai ID capture
                 Bukkit.getScheduler().cancelTask(taskIdHolder[0]);
                 return;
@@ -603,6 +607,11 @@ public class ArenaManager {
         if (teamIndex < 0 || amount <= 0) return;
         arena.addDamage(teamIndex, amount);
         updateSidebar(arena);
+    }
+
+    /** Enregistre les degats infliges par un joueur dans ses stats persistantes. */
+    public void addDamageToPlayerStats(org.bukkit.entity.Player damager, double amount) {
+        plugin.getStatsManager().addDamage(damager.getUniqueId(), damager.getName(), amount);
     }
 
     /** Si une equipe entiere se deconnecte / quitte, on verifie s'il ne reste qu'une equipe vivante. */
@@ -682,6 +691,7 @@ public class ArenaManager {
                     player.teleport(ret);
                 }
                 player.sendMessage(ChatColor.GREEN + "Tu as ete teleporte a ta position de depart.");
+                resetTabList(player);
             }
         }
         arena.resetAll();
@@ -795,6 +805,41 @@ public class ArenaManager {
     }
 
     // ================= Utilitaires =================
+
+    // ================= Tab list =================
+
+    /**
+     * Met a jour le header/footer de la tab list pour tous les joueurs de l'arene.
+     * Header : "HeroCraft" en jaune/bleu + "Push" en rose
+     * Footer : scores des equipes
+     */
+    public void updateTabList(Arena arena) {
+        String header = ChatColor.YELLOW + "" + ChatColor.BOLD + "Hero" + ChatColor.BLUE + "" + ChatColor.BOLD + "Craft"
+                + "  " + ChatColor.LIGHT_PURPLE + "" + ChatColor.BOLD + "Push";
+
+        StringBuilder footer = new StringBuilder();
+        for (int i = 0; i < arena.getTeamCount(); i++) {
+            ChatColor color = getTeamColor(arena, i);
+            String teamName = getTeamDisplayName(arena, i);
+            int pts = arena.getScore(i);
+            int dmg = (int) Math.round(arena.getDamage(i));
+            if (i > 0) footer.append(ChatColor.DARK_GRAY).append("  |  ");
+            footer.append(color).append(ChatColor.BOLD).append(teamName)
+                  .append(ChatColor.RESET).append(" ")
+                  .append(ChatColor.WHITE).append(pts).append(ChatColor.GRAY).append("pts")
+                  .append(ChatColor.DARK_GRAY).append(" / ")
+                  .append(ChatColor.RED).append(dmg).append(ChatColor.GRAY).append("dmg");
+        }
+
+        for (Player p : getOnlinePlayersInArena(arena)) {
+            p.setPlayerListHeaderFooter(header, footer.toString());
+        }
+    }
+
+    /** Remet la tab list par defaut quand le joueur quitte l'arene. */
+    public void resetTabList(Player player) {
+        player.setPlayerListHeaderFooter("", "");
+    }
 
     public void broadcastToArena(Arena arena, String message) {
         for (UUID uuid : arena.getPlayerTeamMap().keySet()) {

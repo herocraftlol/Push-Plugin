@@ -85,6 +85,7 @@ public class GameListener implements Listener {
         int victimTeam = arena.getTeamOf(victim.getUniqueId());
         if (damagerTeam != -1 && damagerTeam != victimTeam) {
             manager.addDamage(arena, damagerTeam, event.getFinalDamage());
+            manager.addDamageToPlayerStats(damager, event.getFinalDamage());
         }
     }
 
@@ -433,6 +434,7 @@ public class GameListener implements Listener {
         processingVoidDeath.remove(player.getUniqueId());
 
         manager.removePlayerFromArena(player, arena, false);
+        manager.resetTabList(player);
         manager.broadcastToArena(arena, ChatColor.GRAY + player.getName() + " a quitte la partie.");
     }
 
