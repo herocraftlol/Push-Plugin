@@ -1,8 +1,23 @@
 # ArenaPvP
 
+![Minecraft Version](https://img.shields.io/badge/Minecraft-1.21.x-brightgreen)
+![Java Version](https://img.shields.io/badge/Java-21-blue)
+![License](https://img.shields.io/badge/License-MIT-yellow)
+![Paper/Spigot](https://img.shields.io/badge/Paper/Spigot-1.21.4-blueviolet)
+
 Plugin Paper/Spigot **1.21.x** (Java 21) : mini-jeu PvP par équipes en arène avec
-zone de vide en dessous, lobby d'attente, kit fixe (épée + arc à recharge), et
-système de points.
+zone de vide en dessous, lobby d'attente, kit fixe (épée + arc à recharge + armure),
+scoreboard en temps réel, mode spectateur et statistiques persistantes.
+
+## 📥 Téléchargement
+
+Téléchargez la dernière version sur la [page des Releases](https://github.com/herocraftlol/Push-Plugin/releases/latest) : `ArenaPvP-1.0.0.jar`
+
+## 🚀 Installation
+
+1. Placez `ArenaPvP-1.0.0.jar` dans le dossier `plugins/` de votre serveur Paper 1.21.x
+2. Redémarrez le serveur
+3. Configurez vos arènes avec les commandes admin ci-dessous
 
 ## Fonctionnalités
 
