@@ -414,16 +414,16 @@ public class ArenaManager {
         swordMeta.setDisplayName(ChatColor.GRAY + "Epee d'arene");
         sword.setItemMeta(swordMeta);
 
-        // Arc : INFINITY enchanteé pour que Bukkit accepte le tir sans consommer de fleche
+        // Arc simple (sans INFINITY) : les fleches sont donnees en quantite au slot 8
         ItemStack bow = new ItemStack(Material.BOW);
         ItemMeta bowMeta = bow.getItemMeta();
         bowMeta.setUnbreakable(true);
         bowMeta.setDisplayName(ChatColor.GRAY + "Arc d'arene");
-        bowMeta.addEnchant(org.bukkit.enchantments.Enchantment.INFINITY, 1, true);
         bow.setItemMeta(bowMeta);
 
-        // On donne quand meme une fleche pour satisfaire la condition de Bukkit (arc infini en necessite 1)
+        // 64 fleches d'arene au slot 8
         ItemStack arrow = createArenaArrow();
+        arrow.setAmount(64);
 
         int team = arena.getTeamOf(player.getUniqueId());
         Color armorColor = chatColorToColor(getTeamColor(arena, team));

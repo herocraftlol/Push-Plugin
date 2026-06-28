@@ -166,24 +166,6 @@ public class GameListener implements Listener {
         Arena arena = manager.getArenaOf(player.getUniqueId());
         if (arena == null) return;
 
-        // Bloquer le mouvement pendant le compte a rebours pre-partie (WAITING avec countdown)
-        if (arena.getState() == Arena.State.WAITING && manager.isPreGameCountdownRunning(arena)) {
-            // Autoriser uniquement la rotation de la tete, pas le deplacement
-            org.bukkit.Location from = event.getFrom();
-            org.bukkit.Location to = event.getTo();
-            if (to != null && (Double.compare(from.getX(), to.getX()) != 0
-                    || Double.compare(from.getY(), to.getY()) != 0
-                    || Double.compare(from.getZ(), to.getZ()) != 0)) {
-                event.setTo(from.clone().setDirection(to.toVector().subtract(from.toVector())));
-                // Reteleporter a la position de lobby pour etre sur
-                to.setX(from.getX());
-                to.setY(from.getY());
-                to.setZ(from.getZ());
-                event.setCancelled(true);
-            }
-            return;
-        }
-
         if (arena.getState() != Arena.State.RUNNING) return;
 
         // Bloquer le mouvement pendant la pause post-point (5s countdown)
