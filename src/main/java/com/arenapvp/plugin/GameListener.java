@@ -11,7 +11,10 @@ import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -333,8 +336,8 @@ public class GameListener implements Listener {
         plugin.getServer().getScheduler().scheduleSyncDelayedTask(plugin, () -> {
             if (player.isOnline()) {
                 ItemStack slot8 = player.getInventory().getItem(8);
-                if (slot8 == null || slot8.getType() != org.bukkit.Material.ARROW) {
-                    player.getInventory().setItem(8, ArenaManager.createArenaArrow());
+                if (slot8 == null || slot8.getType() != org.bukkit.Material.ARROW || slot8.getAmount() < 64) {
+                    player.getInventory().setItem(8, new ItemStack(org.bukkit.Material.ARROW, 64));
                 }
             }
         }, 1L);
@@ -368,6 +371,52 @@ public class GameListener implements Listener {
                 remaining--;
             }
         }.runTaskTimer(plugin, 0L, 20L);
+    }
+
+    // ---------------- Protection de la zone de l'arene ----------------
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onBlockBreak(BlockBreakEvent event) {
+        Player player = event.getPlayer();
+        org.bukkit.Location loc = event.getBlock().getLocation();
+        for (Arena arena : manager.getAll()) {
+            if (arena.hasZone() && arena.isInZone(loc)) {
+                // Les admins sans arene peuvent toujours casser des blocs (pour configurer)
+                if (player.hasPermission("arenapvp.admin") && manager.getArenaOf(player.getUniqueId()) == null) {
+                    return;
+                }
+                event.setCancelled(true);
+                player.sendMessage(ChatColor.RED + "Tu ne peux pas casser de blocs dans la zone de l'arene.");
+                return;
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onBlockPlace(BlockPlaceEvent event) {
+        Player player = event.getPlayer();
+        org.bukkit.Location loc = event.getBlock().getLocation();
+        for (Arena arena : manager.getAll()) {
+            if (arena.hasZone() && arena.isInZone(loc)) {
+                if (player.hasPermission("arenapvp.admin") && manager.getArenaOf(player.getUniqueId()) == null) {
+                    return;
+                }
+                event.setCancelled(true);
+                player.sendMessage(ChatColor.RED + "Tu ne peux pas placer de blocs dans la zone de l'arene.");
+                return;
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onExplosion(EntityExplodeEvent event) {
+        event.blockList().removeIf(block -> {
+            org.bukkit.Location loc = block.getLocation();
+            for (Arena arena : manager.getAll()) {
+                if (arena.hasZone() && arena.isInZone(loc)) return true;
+            }
+            return false;
+        });
     }
 
     // ---------------- Deconnexion en cours de partie ----------------

@@ -8,7 +8,7 @@ description: Mini-jeu PvP par equipes en arene avec vide, lobby d'attente et kit
 commands:
   arena:
     description: Commande principale du plugin ArenaPvP
-    usage: /arena <create|delete|setspawn|setlobby|setvoid|setteams|setteamsize|setminplayers|list|info|join|leave|stats|forcestart|reload>
+    usage: /arena <create|delete|setspawn|setlobby|setvoid|setpos1|setpos2|setteams|setteamsize|setminplayers|list|info|join|leave|stats|forcestart|reload>
     permission: arenapvp.use
     permission-message: "§cTu n'as pas la permission d'utiliser cette commande."
 

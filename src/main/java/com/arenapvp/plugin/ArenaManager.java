@@ -58,6 +58,12 @@ public class ArenaManager {
             if (sec.contains("voidY")) {
                 arena.setVoidY(sec.getDouble("voidY"));
             }
+            if (sec.contains("zonePos1")) {
+                arena.setZonePos1(deserializeLocation(sec.getConfigurationSection("zonePos1")));
+            }
+            if (sec.contains("zonePos2")) {
+                arena.setZonePos2(deserializeLocation(sec.getConfigurationSection("zonePos2")));
+            }
             arena.setTeamCount(sec.getInt("teamCount", 2));
             arena.setTeamSize(sec.getInt("teamSize", 8));
             arena.setMinPlayersToStart(sec.getInt("minPlayersToStart", 2));
@@ -92,6 +98,12 @@ public class ArenaManager {
         }
         if (arena.hasVoidY()) {
             plugin.getConfig().set(path + ".voidY", arena.getVoidY());
+        }
+        if (arena.getZonePos1() != null) {
+            serializeLocation(path + ".zonePos1", arena.getZonePos1());
+        }
+        if (arena.getZonePos2() != null) {
+            serializeLocation(path + ".zonePos2", arena.getZonePos2());
         }
         for (Map.Entry<Integer, Location> e : arena.getTeamSpawns().entrySet()) {
             serializeLocation(path + ".teamSpawns." + e.getKey(), e.getValue());
@@ -421,9 +433,8 @@ public class ArenaManager {
         bowMeta.setDisplayName(ChatColor.GRAY + "Arc d'arene");
         bow.setItemMeta(bowMeta);
 
-        // 64 fleches d'arene au slot 8
-        ItemStack arrow = createArenaArrow();
-        arrow.setAmount(64);
+        // 64 fleches vanilla au slot 8 (sans ItemMeta custom pour eviter que Bukkit les rejette)
+        ItemStack arrow = new ItemStack(Material.ARROW, 64);
 
         int team = arena.getTeamOf(player.getUniqueId());
         Color armorColor = chatColorToColor(getTeamColor(arena, team));

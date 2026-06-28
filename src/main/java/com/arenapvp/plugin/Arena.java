@@ -30,6 +30,10 @@ public class Arena {
     private int teamSize = 8;          // joueurs max par equipe, entre 1 et 8
     private int minPlayersToStart = 2; // minimum global de joueurs pour lancer automatiquement
 
+    // Zone protegee : deux coins definissant le cuboid de l'arene
+    private Location zonePos1 = null;
+    private Location zonePos2 = null;
+
     // spawns[teamIndex] -> liste de Location possibles (on prend juste la 1ere definie en general)
     private final Map<Integer, Location> teamSpawns = new HashMap<>();
 
@@ -241,5 +245,37 @@ public class Arena {
 
     public static ChatColor[] defaultColorOrder() {
         return new ChatColor[]{ChatColor.LIGHT_PURPLE, ChatColor.DARK_PURPLE, ChatColor.DARK_BLUE, ChatColor.BLUE};
+    }
+
+    // ---- Zone protegee ----
+
+    public Location getZonePos1() { return zonePos1; }
+    public void setZonePos1(Location loc) { this.zonePos1 = loc; }
+
+    public Location getZonePos2() { return zonePos2; }
+    public void setZonePos2(Location loc) { this.zonePos2 = loc; }
+
+    public boolean hasZone() {
+        return zonePos1 != null && zonePos2 != null
+                && zonePos1.getWorld() != null && zonePos2.getWorld() != null
+                && zonePos1.getWorld().equals(zonePos2.getWorld());
+    }
+
+    /**
+     * Retourne true si la location est a l'interieur du cuboid defini par pos1 et pos2.
+     */
+    public boolean isInZone(Location loc) {
+        if (!hasZone()) return false;
+        if (loc.getWorld() == null || !loc.getWorld().equals(zonePos1.getWorld())) return false;
+
+        double minX = Math.min(zonePos1.getX(), zonePos2.getX());
+        double maxX = Math.max(zonePos1.getX(), zonePos2.getX());
+        double minY = Math.min(zonePos1.getY(), zonePos2.getY());
+        double maxY = Math.max(zonePos1.getY(), zonePos2.getY());
+        double minZ = Math.min(zonePos1.getZ(), zonePos2.getZ());
+        double maxZ = Math.max(zonePos1.getZ(), zonePos2.getZ());
+
+        double x = loc.getX(), y = loc.getY(), z = loc.getZ();
+        return x >= minX && x <= maxX && y >= minY && y <= maxY && z >= minZ && z <= maxZ;
     }
 }
