@@ -1,7 +1,7 @@
 com/arenapvp/plugin/StatsManager$StatType.class
 com/arenapvp/plugin/StatsManager.class
-com/arenapvp/plugin/ArenaManager.class
 com/arenapvp/plugin/ArenaCommand.class
+com/arenapvp/plugin/ArenaManager.class
 com/arenapvp/plugin/ArenaManager$1.class
 com/arenapvp/plugin/AdminItemListener.class
 com/arenapvp/plugin/GameListener.class
