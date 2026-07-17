@@ -6,7 +6,11 @@
 
     <groupId>com.arenapvp</groupId>
     <artifactId>ArenaPvP</artifactId>
+
+    <version>1.0.3</version>
+
     <version>1.0.1</version>
+>>>>>>> origin/main
     <packaging>jar</packaging>
 
     <properties>
