@@ -12,11 +12,11 @@ temps réel, mode spectateur, **leaderboard** et statistiques persistantes.
 
 ## 📥 Téléchargement
 
-Téléchargez la dernière version sur la [page des Releases](https://github.com/herocraftlol/Push-Plugin/releases/latest) : `ArenaPvP-1.0.1.jar`
+Téléchargez la dernière version sur la [page des Releases](https://github.com/herocraftlol/Push-Plugin/releases/latest) : `ArenaPvP-1.0.3.jar`
 
 ## 🚀 Installation
 
-1. Placez `ArenaPvP-1.0.1.jar` dans le dossier `plugins/` de votre serveur Paper 1.21.x
+1. Placez `ArenaPvP-1.0.3.jar` dans le dossier `plugins/` de votre serveur Paper 1.21.x
 2. Redémarrez le serveur
 3. Configurez vos arènes avec les commandes admin ci-dessous
 
