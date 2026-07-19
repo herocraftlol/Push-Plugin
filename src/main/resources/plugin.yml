@@ -1,9 +1,5 @@
 name: ArenaPvP
-
-version: '1.0.3'
-
-version: '1.0.1'
->>>>>>> origin/main
+version: '1.0.5'
 main: com.arenapvp.plugin.ArenaPvPPlugin
 api-version: '1.21'
 author: ArenaPvP
