@@ -1,4 +1,4 @@
-package com.arenapvp.plugin;
+package com.push.plugin;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;

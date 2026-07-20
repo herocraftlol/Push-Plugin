@@ -1,4 +1,4 @@
-# ArenaPvP
+# Push
 
 ![Minecraft Version](https://img.shields.io/badge/Minecraft-1.21.x-brightgreen)
 ![Java Version](https://img.shields.io/badge/Java-21-blue)
@@ -12,11 +12,11 @@ temps réel, mode spectateur, **leaderboard** et statistiques persistantes.
 
 ## 📥 Téléchargement
 
-Téléchargez la dernière version sur la [page des Releases](https://github.com/herocraftlol/Push-Plugin/releases/latest) : `ArenaPvP-1.0.5.jar`
+Téléchargez la dernière version sur la [page des Releases](https://github.com/herocraftlol/Push-Plugin/releases/latest) : `Push-1.0.3.jar`
 
 ## 🚀 Installation
 
-1. Placez `ArenaPvP-1.0.5.jar` dans le dossier `plugins/` de votre serveur Paper 1.21.x
+1. Placez `Push-1.0.3.jar` dans le dossier `plugins/` de votre serveur Paper 1.21.x
 2. Redémarrez le serveur
 3. Configurez vos arènes avec les commandes admin ci-dessous
 
@@ -77,11 +77,11 @@ Ce projet est un projet Maven standard. Sur votre machine (avec **JDK 21** et
 **Maven** installés) :
 
 ```bash
-cd ArenaPvP
+cd Push
 mvn clean package
 ```
 
-Le fichier `target/ArenaPvP.jar` est généré : placez-le dans le dossier
+Le fichier `target/Push.jar` est généré : placez-le dans le dossier
 `plugins/` de votre serveur Paper 1.21.x, puis démarrez ou redémarrez le
 serveur.
 
@@ -212,6 +212,6 @@ end-delay-seconds: 5
   isolé des autres arènes et du scoreboard principal du serveur : aucune
   interférence entre plusieurs parties simultanées.
 - Les statistiques de victoires/éliminations sont stockées dans
-  `plugins/ArenaPvP/stats.yml`, indépendamment de `config.yml`, et sauvegardées
+  `plugins/Push/stats.yml`, indépendamment de `config.yml`, et sauvegardées
   immédiatement à chaque victoire ou élimination (ainsi qu'à l'arrêt du
   serveur).

@@ -1,4 +1,4 @@
-package com.arenapvp.plugin;
+package com.push.plugin;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -39,7 +39,7 @@ import java.util.UUID;
  */
 public class GameListener implements Listener {
 
-    private final ArenaPvPPlugin plugin;
+    private final PushPlugin plugin;
     private final ArenaManager manager;
 
     // Cooldown de tir par joueur
@@ -53,7 +53,7 @@ public class GameListener implements Listener {
     // Joueurs dont la mort par le vide est en cours de traitement
     private final Set<UUID> processingVoidDeath = new HashSet<>();
 
-    public GameListener(ArenaPvPPlugin plugin) {
+    public GameListener(PushPlugin plugin) {
         this.plugin = plugin;
         this.manager = plugin.getArenaManager();
     }

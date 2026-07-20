@@ -1,14 +1,20 @@
-name: ArenaPvP
-version: '1.0.5'
-main: com.arenapvp.plugin.ArenaPvPPlugin
+name: Push
+
+version: '1.0.3'
+main: com.push.plugin.PushPlugin
 api-version: '1.21'
-author: ArenaPvP
+author: Push
 description: Mini-jeu PvP par equipes en arene avec vide, lobby d'attente et kit fixe.
 
 commands:
   arena:
-    description: Commande principale du plugin ArenaPvP
+    description: Commande principale du plugin Push
     usage: /arena <create|delete|setspawn|setlobby|setvoid|setpos1|setpos2|setteams|setteamsize|setminplayers|list|info|join|leave|stats|leaderboard|forcestart|reload>
+    permission: arenapvp.use
+    permission-message: "§cTu n'as pas la permission d'utiliser cette commande."
+  p:
+    description: Commande utilitaire du plugin Push (GUI des arenes)
+    usage: /p gui
     permission: arenapvp.use
     permission-message: "§cTu n'as pas la permission d'utiliser cette commande."
 

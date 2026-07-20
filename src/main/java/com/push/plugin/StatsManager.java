@@ -1,4 +1,4 @@
-package com.arenapvp.plugin;
+package com.push.plugin;
 
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -15,11 +15,11 @@ import java.util.stream.Collectors;
  */
 public class StatsManager {
 
-    private final ArenaPvPPlugin plugin;
+    private final PushPlugin plugin;
     private final File file;
     private YamlConfiguration config;
 
-    public StatsManager(ArenaPvPPlugin plugin) {
+    public StatsManager(PushPlugin plugin) {
         this.plugin = plugin;
         this.file = new File(plugin.getDataFolder(), "stats.yml");
     }

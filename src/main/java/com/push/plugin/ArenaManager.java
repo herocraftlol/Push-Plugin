@@ -1,4 +1,4 @@
-package com.arenapvp.plugin;
+package com.push.plugin;
 
 import org.bukkit.*;
 import org.bukkit.configuration.ConfigurationSection;
@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
  */
 public class ArenaManager {
 
-    private final ArenaPvPPlugin plugin;
+    private final PushPlugin plugin;
     private final Map<String, Arena> arenas = new HashMap<>();
 
     // Taches planifiees par arene (pour pouvoir les annuler)
@@ -35,7 +35,7 @@ public class ArenaManager {
     // Flag : arene en pause apres un point (interdit les kills/moves pendant le countdown)
     private final Set<String> arenasPaused = new HashSet<>();
 
-    public ArenaManager(ArenaPvPPlugin plugin) {
+    public ArenaManager(PushPlugin plugin) {
         this.plugin = plugin;
     }
 

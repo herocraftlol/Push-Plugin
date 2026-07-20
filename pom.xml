@@ -4,9 +4,11 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.arenapvp</groupId>
-    <artifactId>ArenaPvP</artifactId>
-    <version>1.0.5</version>
+    <groupId>com.push</groupId>
+    <artifactId>Push</artifactId>
+
+    <version>1.0.3</version>
+
     <packaging>jar</packaging>
 
     <properties>
@@ -32,7 +34,7 @@
     </dependencies>
 
     <build>
-        <finalName>ArenaPvP</finalName>
+        <finalName>Push</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

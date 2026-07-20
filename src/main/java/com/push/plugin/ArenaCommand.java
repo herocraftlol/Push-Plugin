@@ -1,4 +1,4 @@
-package com.arenapvp.plugin;
+package com.push.plugin;
 
 import org.bukkit.*;
 import org.bukkit.block.Block;
@@ -16,10 +16,10 @@ import java.util.stream.Collectors;
 
 public class ArenaCommand implements CommandExecutor, TabCompleter {
 
-    private final ArenaPvPPlugin plugin;
+    private final PushPlugin plugin;
     private final ArenaManager manager;
 
-    public ArenaCommand(ArenaPvPPlugin plugin) {
+    public ArenaCommand(PushPlugin plugin) {
         this.plugin = plugin;
         this.manager = plugin.getArenaManager();
     }

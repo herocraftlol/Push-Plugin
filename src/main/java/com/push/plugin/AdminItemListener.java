@@ -1,4 +1,4 @@
-package com.arenapvp.plugin;
+package com.push.plugin;
 
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
@@ -15,9 +15,9 @@ import org.bukkit.inventory.meta.ItemMeta;
  */
 public class AdminItemListener implements Listener {
 
-    private final ArenaPvPPlugin plugin;
+    private final PushPlugin plugin;
 
-    public AdminItemListener(ArenaPvPPlugin plugin) {
+    public AdminItemListener(PushPlugin plugin) {
         this.plugin = plugin;
     }
 
