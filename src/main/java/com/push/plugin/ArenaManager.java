@@ -311,7 +311,7 @@ public class ArenaManager {
         player.getInventory().setBoots(null);
     }
 
-    /** Lance manuellement la partie (utilise par le diamant admin ou /arena forcestart). */
+    /** Lance manuellement la partie (utilise par le diamant admin ou /p forcestart). */
     public void forceStart(Arena arena) {
         if (arena.getState() != Arena.State.WAITING) return;
         if (arena.countPlayers() < 1) return;

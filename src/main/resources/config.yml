@@ -15,7 +15,6 @@ bow-cooldown-seconds: 3
 end-delay-seconds: 5
 
 # Couleurs des equipes dans l'ordre : equipe 1, equipe 2, equipe 3, equipe 4
-# Valeurs possibles : n'importe quelle ChatColor Bukkit (ex: PINK, MAGENTA, DARK_PURPLE, DARK_BLUE)
 team-colors:
   - PINK
   - MAGENTA

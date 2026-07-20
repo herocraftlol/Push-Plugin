@@ -1,5 +1,6 @@
 package com.push.plugin;
 
+import com.push.plugin.gui.ArenaGUI;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
@@ -52,6 +53,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
             case "setpos2" -> handleSetPos(sender, args, 2);
             case "leaderboard" -> handleLeaderboard(sender, args);
             case "reload" -> handleReload(sender);
+            case "gui" -> handleGui(sender);
             default -> sendHelp(sender);
         }
         return true;
@@ -62,7 +64,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
     private void handleCreate(CommandSender sender, String[] args) {
         if (!requireAdmin(sender)) return;
         if (args.length < 2) {
-            sender.sendMessage(ChatColor.RED + "Usage: /arena create <nom>");
+            sender.sendMessage(ChatColor.RED + "Usage: /p create <nom>");
             return;
         }
         String name = args[1];
@@ -72,13 +74,13 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
             return;
         }
         sender.sendMessage(ChatColor.GREEN + "Arene " + ChatColor.YELLOW + name + ChatColor.GREEN
-                + " creee. Configure-la avec /arena setlobby, setspawn, setvoid, setteams...");
+                + " creee. Configure-la avec /p setlobby, setspawn, setvoid, setteams...");
     }
 
     private void handleDelete(CommandSender sender, String[] args) {
         if (!requireAdmin(sender)) return;
         if (args.length < 2) {
-            sender.sendMessage(ChatColor.RED + "Usage: /arena delete <nom>");
+            sender.sendMessage(ChatColor.RED + "Usage: /p delete <nom>");
             return;
         }
         boolean ok = manager.delete(args[1]);
@@ -90,7 +92,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
         if (!requirePlayerAdmin(sender)) return;
         Player player = (Player) sender;
         if (args.length < 2) {
-            sender.sendMessage(ChatColor.RED + "Usage: /arena setlobby <nom>");
+            sender.sendMessage(ChatColor.RED + "Usage: /p setlobby <nom>");
             return;
         }
         Arena arena = getArenaOrError(sender, args[1]);
@@ -105,7 +107,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
         if (!requirePlayerAdmin(sender)) return;
         Player player = (Player) sender;
         if (args.length < 3) {
-            sender.sendMessage(ChatColor.RED + "Usage: /arena setspawn <nom> <numeroEquipe 1-4>");
+            sender.sendMessage(ChatColor.RED + "Usage: /p setspawn <nom> <numeroEquipe 1-4>");
             return;
         }
         Arena arena = getArenaOrError(sender, args[1]);
@@ -133,7 +135,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
         if (!requirePlayerAdmin(sender)) return;
         Player player = (Player) sender;
         if (args.length < 2) {
-            sender.sendMessage(ChatColor.RED + "Usage: /arena setvoid <nom> [hauteurY optionnelle]");
+            sender.sendMessage(ChatColor.RED + "Usage: /p setvoid <nom> [hauteurY optionnelle]");
             return;
         }
         Arena arena = getArenaOrError(sender, args[1]);
@@ -160,7 +162,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
     private void handleSetTeams(CommandSender sender, String[] args) {
         if (!requireAdmin(sender)) return;
         if (args.length < 3) {
-            sender.sendMessage(ChatColor.RED + "Usage: /arena setteams <nom> <2-4>");
+            sender.sendMessage(ChatColor.RED + "Usage: /p setteams <nom> <2-4>");
             return;
         }
         Arena arena = getArenaOrError(sender, args[1]);
@@ -180,13 +182,13 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
         arena.setTeamCount(count);
         manager.saveArena(arena);
         sender.sendMessage(ChatColor.GREEN + "Nombre d'equipes defini a " + count + " pour " + arena.getName()
-                + ". N'oublie pas de definir les spawns correspondants avec /arena setspawn.");
+                + ". N'oublie pas de definir les spawns correspondants avec /p setspawn.");
     }
 
     private void handleSetTeamSize(CommandSender sender, String[] args) {
         if (!requireAdmin(sender)) return;
         if (args.length < 3) {
-            sender.sendMessage(ChatColor.RED + "Usage: /arena setteamsize <nom> <1-8>");
+            sender.sendMessage(ChatColor.RED + "Usage: /p setteamsize <nom> <1-8>");
             return;
         }
         Arena arena = getArenaOrError(sender, args[1]);
@@ -212,7 +214,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
     private void handleSetMinPlayers(CommandSender sender, String[] args) {
         if (!requireAdmin(sender)) return;
         if (args.length < 3) {
-            sender.sendMessage(ChatColor.RED + "Usage: /arena setminplayers <nom> <minimum>");
+            sender.sendMessage(ChatColor.RED + "Usage: /p setminplayers <nom> <minimum>");
             return;
         }
         Arena arena = getArenaOrError(sender, args[1]);
@@ -239,7 +241,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
         if (!requirePlayerAdmin(sender)) return;
         Player player = (Player) sender;
         if (args.length < 2) {
-            sender.sendMessage(ChatColor.RED + "Usage: /arena setpos" + posNum + " <nom>");
+            sender.sendMessage(ChatColor.RED + "Usage: /p setpos" + posNum + " <nom>");
             return;
         }
         Arena arena = getArenaOrError(sender, args[1]);
@@ -254,7 +256,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
 
         String status = arena.hasZone()
                 ? ChatColor.GREEN + " Zone completement definie !"
-                : ChatColor.YELLOW + " Definis aussi /arena setpos" + (posNum == 1 ? 2 : 1) + " pour completer la zone.";
+                : ChatColor.YELLOW + " Definis aussi /p setpos" + (posNum == 1 ? 2 : 1) + " pour completer la zone.";
         sender.sendMessage(ChatColor.GREEN + "Position " + posNum + " de la zone definie pour "
                 + ChatColor.YELLOW + arena.getName() + ChatColor.GREEN + "." + status);
     }
@@ -290,7 +292,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
 
     private void handleInfo(CommandSender sender, String[] args) {
         if (args.length < 2) {
-            sender.sendMessage(ChatColor.RED + "Usage: /arena info <nom>");
+            sender.sendMessage(ChatColor.RED + "Usage: /p info <nom>");
             return;
         }
         Arena arena = getArenaOrError(sender, args[1]);
@@ -317,7 +319,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
             return;
         }
         if (args.length < 2) {
-            sender.sendMessage(ChatColor.RED + "Usage: /arena join <nom>");
+            sender.sendMessage(ChatColor.RED + "Usage: /p join <nom>");
             return;
         }
         Arena arena = getArenaOrError(sender, args[1]);
@@ -332,6 +334,14 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
             return;
         }
         manager.leave(player);
+    }
+
+    private void handleGui(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(ChatColor.RED + "Cette commande doit etre executee par un joueur.");
+            return;
+        }
+        plugin.getArenaGUI().open(player);
     }
 
     private void handleStats(CommandSender sender, String[] args) {
@@ -359,7 +369,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
             targetUuid = player.getUniqueId();
             targetName = player.getName();
         } else {
-            sender.sendMessage(ChatColor.RED + "Usage: /arena stats <joueur>");
+            sender.sendMessage(ChatColor.RED + "Usage: /p stats <joueur>");
             return;
         }
 
@@ -378,7 +388,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
         Player player = (Player) sender;
 
         if (args.length < 2) {
-            sender.sendMessage(ChatColor.RED + "Usage: /arena leaderboard <kills|wins|damage>");
+            sender.sendMessage(ChatColor.RED + "Usage: /p leaderboard <kills|wins|damage>");
             return;
         }
 
@@ -486,11 +496,11 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
         } else if (sender instanceof Player player) {
             arena = manager.getArenaOf(player.getUniqueId());
             if (arena == null) {
-                sender.sendMessage(ChatColor.RED + "Precise le nom de l'arene: /arena forcestart <nom>");
+                sender.sendMessage(ChatColor.RED + "Precise le nom de l'arene: /p forcestart <nom>");
                 return;
             }
         } else {
-            sender.sendMessage(ChatColor.RED + "Usage: /arena forcestart <nom>");
+            sender.sendMessage(ChatColor.RED + "Usage: /p forcestart <nom>");
             return;
         }
         manager.forceStart(arena);
@@ -525,26 +535,27 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
 
     private void sendHelp(CommandSender sender) {
         sender.sendMessage(ChatColor.GOLD + "=== ArenaPvP ===");
-        sender.sendMessage(ChatColor.YELLOW + "/arena list" + ChatColor.GRAY + " - liste des arenes");
-        sender.sendMessage(ChatColor.YELLOW + "/arena info <nom>" + ChatColor.GRAY + " - details d'une arene");
-        sender.sendMessage(ChatColor.YELLOW + "/arena join <nom>" + ChatColor.GRAY + " - rejoindre le lobby");
-        sender.sendMessage(ChatColor.YELLOW + "/arena leave" + ChatColor.GRAY + " - quitter l'arene actuelle");
-        sender.sendMessage(ChatColor.YELLOW + "/arena stats [joueur]" + ChatColor.GRAY + " - victoires et eliminations");
+        sender.sendMessage(ChatColor.YELLOW + "/p list" + ChatColor.GRAY + " - liste des arenes");
+        sender.sendMessage(ChatColor.YELLOW + "/p info <nom>" + ChatColor.GRAY + " - details d'une arene");
+        sender.sendMessage(ChatColor.YELLOW + "/p join <nom>" + ChatColor.GRAY + " - rejoindre le lobby");
+        sender.sendMessage(ChatColor.YELLOW + "/p leave" + ChatColor.GRAY + " - quitter l'arene actuelle");
+        sender.sendMessage(ChatColor.YELLOW + "/p stats [joueur]" + ChatColor.GRAY + " - victoires et eliminations");
+        sender.sendMessage(ChatColor.YELLOW + "/p gui" + ChatColor.GRAY + " - ouvrir le menu des arenes");
         if (sender.hasPermission("arenapvp.admin")) {
             sender.sendMessage(ChatColor.AQUA + "--- Admin ---");
-            sender.sendMessage(ChatColor.YELLOW + "/arena create <nom>");
-            sender.sendMessage(ChatColor.YELLOW + "/arena delete <nom>");
-            sender.sendMessage(ChatColor.YELLOW + "/arena setlobby <nom>");
-            sender.sendMessage(ChatColor.YELLOW + "/arena setspawn <nom> <1-4>");
-            sender.sendMessage(ChatColor.YELLOW + "/arena setvoid <nom> [y]");
-            sender.sendMessage(ChatColor.YELLOW + "/arena setpos1 <nom>" + ChatColor.GRAY + " - coin 1 de la zone protegee");
-            sender.sendMessage(ChatColor.YELLOW + "/arena setpos2 <nom>" + ChatColor.GRAY + " - coin 2 de la zone protegee");
-            sender.sendMessage(ChatColor.YELLOW + "/arena setteams <nom> <2-4>");
-            sender.sendMessage(ChatColor.YELLOW + "/arena setteamsize <nom> <1-8>");
-            sender.sendMessage(ChatColor.YELLOW + "/arena setminplayers <nom> <min>");
-            sender.sendMessage(ChatColor.YELLOW + "/arena forcestart [nom]");
-            sender.sendMessage(ChatColor.YELLOW + "/arena leaderboard <kills|wins|damage>" + ChatColor.GRAY + " - panneau top joueurs");
-            sender.sendMessage(ChatColor.YELLOW + "/arena reload");
+            sender.sendMessage(ChatColor.YELLOW + "/p create <nom>");
+            sender.sendMessage(ChatColor.YELLOW + "/p delete <nom>");
+            sender.sendMessage(ChatColor.YELLOW + "/p setlobby <nom>");
+            sender.sendMessage(ChatColor.YELLOW + "/p setspawn <nom> <1-4>");
+            sender.sendMessage(ChatColor.YELLOW + "/p setvoid <nom> [y]");
+            sender.sendMessage(ChatColor.YELLOW + "/p setpos1 <nom>" + ChatColor.GRAY + " - coin 1 de la zone protegee");
+            sender.sendMessage(ChatColor.YELLOW + "/p setpos2 <nom>" + ChatColor.GRAY + " - coin 2 de la zone protegee");
+            sender.sendMessage(ChatColor.YELLOW + "/p setteams <nom> <2-4>");
+            sender.sendMessage(ChatColor.YELLOW + "/p setteamsize <nom> <1-8>");
+            sender.sendMessage(ChatColor.YELLOW + "/p setminplayers <nom> <min>");
+            sender.sendMessage(ChatColor.YELLOW + "/p forcestart [nom]");
+            sender.sendMessage(ChatColor.YELLOW + "/p leaderboard <kills|wins|damage>" + ChatColor.GRAY + " - panneau top joueurs");
+            sender.sendMessage(ChatColor.YELLOW + "/p reload");
         }
     }
 
@@ -552,7 +563,7 @@ public class ArenaCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        List<String> subs = new ArrayList<>(List.of("list", "info", "join", "leave", "stats"));
+        List<String> subs = new ArrayList<>(List.of("list", "info", "join", "leave", "stats", "gui"));
         if (sender.hasPermission("arenapvp.admin")) {
             subs.addAll(List.of("create", "delete", "setlobby", "setspawn", "setvoid",
                     "setteams", "setteamsize", "setminplayers", "forcestart", "setpos1", "setpos2", "leaderboard", "reload"));

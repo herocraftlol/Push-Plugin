@@ -11,7 +11,7 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 
 /**
  * Ecoute les clics dans le GUI d'arenes et effectue l'action correspondante :
- * - Clic sur une arene disponible -> rejoint le lobby de cette arene (equivalent /arena join <nom>)
+ * - Clic sur une arene disponible -> rejoint le lobby de cette arene (equivalent /p join <nom>)
  */
 public class ArenaGUIListener implements Listener {
 

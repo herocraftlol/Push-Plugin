@@ -6,9 +6,7 @@
 
     <groupId>com.push</groupId>
     <artifactId>Push</artifactId>
-
     <version>1.0.3</version>
-
     <packaging>jar</packaging>
 
     <properties>
@@ -45,7 +43,6 @@
                 </configuration>
             </plugin>
             <plugin>
-                <!-- Permet d'inclure resources/plugin.yml + config.yml dans le jar final -->
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-resources-plugin</artifactId>
                 <version>3.3.1</version>
