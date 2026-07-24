@@ -4,9 +4,11 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.push</groupId>
-    <artifactId>Push</artifactId>
-    <version>1.0.3</version>
+    <groupId>com.arenapvp</groupId>
+    <artifactId>ArenaPvP</artifactId>
+
+    <version>1.0.4</version>
+
     <packaging>jar</packaging>
 
     <properties>
@@ -32,7 +34,7 @@
     </dependencies>
 
     <build>
-        <finalName>Push</finalName>
+        <finalName>ArenaPvP-${project.version}</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -43,6 +45,7 @@
                 </configuration>
             </plugin>
             <plugin>
+                <!-- Permet d'inclure resources/plugin.yml + config.yml dans le jar final -->
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-resources-plugin</artifactId>
                 <version>3.3.1</version>
