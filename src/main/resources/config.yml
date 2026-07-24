@@ -1,7 +1,7 @@
 # =========================================================
-#  Push - configuration
+#  ArenaPvP - configuration
 #  Les arenes sont normalement creees/editees via les
-#  commandes en jeu (/arena ...). Ce fichier est ecrit et
+#  commandes en jeu (/p ...). Ce fichier est ecrit et
 #  relu automatiquement par le plugin.
 # =========================================================
 
@@ -15,15 +15,19 @@ bow-cooldown-seconds: 3
 end-delay-seconds: 5
 
 # Couleurs des equipes dans l'ordre : equipe 1, equipe 2, equipe 3, equipe 4
+# Valeurs possibles : n'importe quelle ChatColor Bukkit valide (LIGHT_PURPLE, DARK_PURPLE,
+# BLUE, DARK_BLUE, RED, GREEN, YELLOW, AQUA, GOLD, ...). Attention : Bukkit n'a PAS de
+# ChatColor "PINK" ni "MAGENTA" (contrairement aux vitres teintees/laines) ; LIGHT_PURPLE
+# est l'equivalent texte le plus proche du magenta/rose.
 team-colors:
-  - PINK
-  - MAGENTA
+  - LIGHT_PURPLE
   - DARK_PURPLE
+  - BLUE
   - DARK_BLUE
 
 team-display-names:
-  - "Rose"
   - "Magenta"
+  - "Rose"
   - "Violet"
   - "Bleu fonce"
 

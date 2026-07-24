@@ -1,4 +1,4 @@
-# Push
+# ArenaPvP
 
 ![Minecraft Version](https://img.shields.io/badge/Minecraft-1.21.x-brightgreen)
 ![Java Version](https://img.shields.io/badge/Java-21-blue)
@@ -12,11 +12,19 @@ temps réel, mode spectateur, **leaderboard** et statistiques persistantes.
 
 ## 📥 Téléchargement
 
-Téléchargez la dernière version sur la [page des Releases](https://github.com/herocraftlol/Push-Plugin/releases/latest) : `Push-1.0.3.jar`
+
+Téléchargez la dernière version sur la [page des Releases](https://github.com/herocraftlol/Push-Plugin/releases/latest) : `ArenaPvP-1.0.4.jar`
 
 ## 🚀 Installation
 
-1. Placez `Push-1.0.3.jar` dans le dossier `plugins/` de votre serveur Paper 1.21.x
+1. Placez `ArenaPvP-1.0.4.jar` dans le dossier `plugins/` de votre serveur Paper 1.21.x
+
+Téléchargez la dernière version sur la [page des Releases](https://github.com/herocraftlol/Push-Plugin/releases/latest) : `ArenaPvP-1.0.1.jar`
+
+## 🚀 Installation
+
+1. Placez `ArenaPvP-1.0.1.jar` dans le dossier `plugins/` de votre serveur Paper 1.21.x
+>>>>>>> origin/main
 2. Redémarrez le serveur
 3. Configurez vos arènes avec les commandes admin ci-dessous
 
@@ -69,7 +77,7 @@ Téléchargez la dernière version sur la [page des Releases](https://github.com
   trouvaient avant de rejoindre le lobby.
 - **Statistiques persistantes** : chaque victoire et chaque élimination est
   enregistrée par joueur (fichier `stats.yml`), consultable avec
-  `/arena stats [joueur]`.
+  `/p stats [joueur]`.
 
 ## Compilation
 
@@ -77,11 +85,11 @@ Ce projet est un projet Maven standard. Sur votre machine (avec **JDK 21** et
 **Maven** installés) :
 
 ```bash
-cd Push
+cd ArenaPvP
 mvn clean package
 ```
 
-Le fichier `target/Push.jar` est généré : placez-le dans le dossier
+Le fichier `target/ArenaPvP.jar` est généré : placez-le dans le dossier
 `plugins/` de votre serveur Paper 1.21.x, puis démarrez ou redémarrez le
 serveur.
 
@@ -104,52 +112,67 @@ position du joueur au moment de la commande est enregistrée).
 
 1. **Créer l'arène**
    ```
-   /arena create <nom>
+   /p create <nom>
    ```
 
 2. **Définir le point du lobby d'attente** (tenez-vous à l'endroit voulu) :
    ```
-   /arena setlobby <nom>
+   /p setlobby <nom>
    ```
 
 3. **Définir le nombre d'équipes** (entre 2 et 4) :
    ```
-   /arena setteams <nom> <2-4>
+   /p setteams <nom> <2-4>
    ```
 
-4. **Définir le spawn de chaque équipe** (tenez-vous à l'endroit voulu, une
-   commande par équipe) :
+4. **Définir le(s) spawn(s) de chaque équipe** (tenez-vous à l'endroit voulu) :
    ```
-   /arena setspawn <nom> 1
-   /arena setspawn <nom> 2
-   /arena setspawn <nom> 3   (si 3+ équipes)
-   /arena setspawn <nom> 4   (si 4 équipes)
+   /p setspawn <nom> 1
+   /p setspawn <nom> 2
+   /p setspawn <nom> 3   (si 3+ équipes)
+   /p setspawn <nom> 4   (si 4 équipes)
    ```
+   Si votre `teamSize` est supérieur à 1 (plusieurs joueurs par équipe), vous pouvez
+   définir **plusieurs spawns pour une même équipe** afin qu'ils n'apparaissent pas
+   tous exactement au même endroit : lancez simplement `/p setspawn <nom> <equipe>`
+   une nouvelle fois depuis un autre point, un nouveau spawn est ajouté à la suite
+   (un spawn est ensuite tiré au hasard parmi ceux définis, à chaque téléportation).
+   Vous pouvez aussi préciser le numéro explicitement pour remplacer un spawn existant :
+   ```
+   /p setspawn <nom> 1 2     (définit/remplace le spawn n°2 de l'équipe 1)
+   /p delspawn <nom> 1 2     (supprime le spawn n°2 de l'équipe 1)
+   ```
+   Le menu `/p spawns <nom>` ouvre un GUI visuel (vitres teintées, une par équipe)
+   qui indique combien de spawns sont déjà configurés pour chaque équipe : clic
+   gauche pour rappeler la commande à taper, clic droit pour supprimer le dernier
+   spawn ajouté. La couleur de chaque vitre dépend du nombre d'équipes de l'arène :
+   **Magenta / Rose** pour une arène à 2 équipes, **Violet / Bleu clair / Bleu / Cyan**
+   pour une arène à 3 ou 4 équipes.
 
 5. **Définir la limite de vide** (hauteur Y en dessous de laquelle un joueur
    est éliminé). Si vous ne précisez pas de valeur, c'est votre position Y
    actuelle qui est utilisée — placez-vous donc juste au niveau du vide,
    ou légèrement au-dessus du fond de l'arène :
    ```
-   /arena setvoid <nom> [y]
+   /p setvoid <nom> [y]
    ```
-   Exemple : `/arena setvoid arene1 50` élimine tout joueur descendant
+   Exemple : `/p setvoid arene1 50` élimine tout joueur descendant
    sous Y=50.
 
 6. **Définir la taille maximale d'une équipe** (entre 1 et 8 joueurs) :
    ```
-   /arena setteamsize <nom> <1-8>
+   /p setteamsize <nom> <1-8>
    ```
 
 7. **Définir le minimum de joueurs pour démarrer automatiquement** (par
    défaut 2) :
    ```
-   /arena setminplayers <nom> <minimum>
+   /p setminplayers <nom> <minimum>
    ```
 
 8. **Vérifier que tout est prêt** :
    ```
-   /arena info <nom>
+   /p info <nom>
    ```
    La ligne "Entièrement configurée" doit afficher "oui". Il faut au minimum
    un lobby, une limite de vide, et un spawn par équipe active.
@@ -157,19 +180,22 @@ position du joueur au moment de la commande est enregistrée).
 ## Commandes joueur
 
 ```
-/arena list              - liste les arènes et leur état
-/arena info <nom>        - détails d'une arène
-/arena join <nom>        - rejoindre le lobby d'attente
-/arena leave             - quitter l'arène (lobby ou en partie)
-/arena stats [joueur]    - affiche les victoires et éliminations (les tiennes par défaut)
+/p list              - liste les arènes et leur état
+/p info <nom>        - détails d'une arène
+/p join <nom>        - rejoindre le lobby d'attente
+/p leave             - quitter l'arène (lobby ou en partie)
+/p stats [joueur]    - affiche les victoires et éliminations (les tiennes par défaut)
+/p gui               - ouvre un menu graphique pour rejoindre une arène en un clic
 ```
 
 ## Commandes admin supplémentaires
 
 ```
-/arena delete <nom>          - supprimer une arène
-/arena forcestart [nom]      - forcer le démarrage immédiat (équivalent au diamant)
-/arena reload                - recharger la configuration depuis config.yml
+/p delete <nom>          - supprimer une arène
+/p delspawn <nom> <equipe> <numero> - supprimer un spawn d'équipe
+/p spawns <nom>          - menu visuel des spawns (vitres colorées par équipe)
+/p forcestart [nom]      - forcer le démarrage immédiat (équivalent au diamant)
+/p reload                - recharger la configuration depuis config.yml
 ```
 
 ## Personnaliser les couleurs et noms d'équipe
@@ -212,6 +238,6 @@ end-delay-seconds: 5
   isolé des autres arènes et du scoreboard principal du serveur : aucune
   interférence entre plusieurs parties simultanées.
 - Les statistiques de victoires/éliminations sont stockées dans
-  `plugins/Push/stats.yml`, indépendamment de `config.yml`, et sauvegardées
+  `plugins/ArenaPvP/stats.yml`, indépendamment de `config.yml`, et sauvegardées
   immédiatement à chaque victoire ou élimination (ainsi qu'à l'arrêt du
   serveur).
