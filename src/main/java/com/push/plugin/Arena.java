@@ -1,12 +1,12 @@
 package com.push.plugin;
 
-import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
-import org.bukkit.entity.Player;
-import org.bukkit.scoreboard.Scoreboard;
+import org.bukkit.Material;
 
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Represente une arene de jeu : sa configuration (spawns, lobby, limite de vide,
@@ -34,8 +34,16 @@ public class Arena {
     private Location zonePos1 = null;
     private Location zonePos2 = null;
 
-    // spawns[teamIndex] -> liste de Location possibles (on prend juste la 1ere definie en general)
-    private final Map<Integer, Location> teamSpawns = new HashMap<>();
+    // Zone du lobby d'attente construit en jeu : la structure comprise entre ces deux
+    // coins est effacee au lancement de la partie et remise en place a la reouverture.
+    private Location lobbyZonePos1 = null;
+    private Location lobbyZonePos2 = null;
+
+    // spawns[teamIndex] -> liste de Location possibles. Plusieurs spawns par equipe
+    // permettent d'eviter que tous les joueurs d'une meme equipe apparaissent au meme
+    // endroit quand teamSize > 1 (un spawn est tire au hasard parmi la liste a chaque
+    // teleportation, comme dans HikaBrain).
+    private final Map<Integer, List<Location>> teamSpawns = new HashMap<>();
 
     // Etat de partie
     private State state = State.WAITING;
@@ -44,10 +52,27 @@ public class Arena {
     private final Map<Integer, Double> teamDamage = new HashMap<>(); // degats infliges par chaque equipe durant la partie
     private final Map<UUID, Location> returnLocations = new HashMap<>(); // ou teleporter le joueur a la fin/depart
 
-    // Scoreboard dedie a cette arene (sidebar des scores + equipes colorees), cree a la demande
-    private Scoreboard scoreboard;
-    // Memorise les lignes actuellement affichees sur le sidebar, pour pouvoir les effacer proprement
-    private final List<String> sidebarEntries = new ArrayList<>();
+    // Point de teleportation des spectateurs (optionnel : a defaut on utilise le lobby)
+    private Location spectatorSpawn;
+
+    // Un admin peut desactiver le mode spectateur pour cette arene specifiquement
+    // (evenements competitifs, performances...). Actif par defaut.
+    private boolean spectatingEnabled = true;
+
+    // Spectateurs actuellement en train d'observer cette arene
+    private final Set<UUID> spectators = new HashSet<>();
+    // Position et mode de jeu des spectateurs avant qu'ils ne passent en observation
+    private final Map<UUID, Location> preSpectateLocations = new HashMap<>();
+    private final Map<UUID, GameMode> preSpectateModes = new HashMap<>();
+
+    // Statistiques de la partie en cours (remises a zero a chaque demarrage), pour le sidebar
+    private final Map<UUID, Integer> matchKills = new HashMap<>();
+    private final Map<UUID, Integer> matchDeaths = new HashMap<>();
+    private final Map<UUID, Double> matchDamage = new HashMap<>();
+    private final Map<UUID, Double> matchXpGained = new HashMap<>(); // pour l'ecran de fin de partie
+
+    // Horodatage du debut de la partie, pour afficher le temps ecoule sur le sidebar
+    private long startTimeMillis = 0L;
 
     public Arena(String name) {
         this.name = name;
@@ -105,18 +130,80 @@ public class Arena {
         return teamCount * teamSize;
     }
 
-    public Map<Integer, Location> getTeamSpawns() {
+    /**
+     * Acces brut a la structure de spawns (utilise pour la sauvegarde/le chargement).
+     */
+    public Map<Integer, List<Location>> getTeamSpawns() {
         return teamSpawns;
     }
 
-    public void setTeamSpawn(int teamIndex, Location loc) {
-        teamSpawns.put(teamIndex, loc);
+    /**
+     * Retourne la liste (non modifiable) des spawns configures pour une equipe, dans
+     * l'ordre de leur index (le premier element correspond au spawn "1").
+     */
+    public List<Location> getSpawns(int teamIndex) {
+        List<Location> list = teamSpawns.get(teamIndex);
+        return list == null ? Collections.emptyList() : Collections.unmodifiableList(list);
+    }
+
+    /**
+     * Nombre de spawns actuellement configures pour une equipe.
+     */
+    public int getSpawnCount(int teamIndex) {
+        List<Location> list = teamSpawns.get(teamIndex);
+        return list == null ? 0 : list.size();
+    }
+
+    /**
+     * Definit (ou remplace) le spawn d'une equipe a l'index donne (1-based, comme vu par
+     * l'admin en commande). Si l'index correspond au prochain spawn disponible
+     * (liste.size() + 1), il est ajoute a la suite. Les "trous" ne sont pas autorises :
+     * un admin doit definir le spawn 1 avant de pouvoir definir le spawn 2, etc.
+     *
+     * Renvoie false si l'index demande est invalide (trop grand, ou inferieur a 1).
+     */
+    public boolean setSpawn(int teamIndex, int spawnNumber, Location loc) {
+        if (spawnNumber < 1) return false;
+        List<Location> list = teamSpawns.computeIfAbsent(teamIndex, k -> new ArrayList<>());
+        if (spawnNumber <= list.size()) {
+            list.set(spawnNumber - 1, loc);
+            return true;
+        }
+        if (spawnNumber == list.size() + 1) {
+            list.add(loc);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Supprime le spawn d'une equipe a l'index donne (1-based). Renvoie false si l'index
+     * est invalide.
+     */
+    public boolean removeSpawn(int teamIndex, int spawnNumber) {
+        List<Location> list = teamSpawns.get(teamIndex);
+        if (list == null || spawnNumber < 1 || spawnNumber > list.size()) return false;
+        list.remove(spawnNumber - 1);
+        return true;
+    }
+
+    /**
+     * Renvoie un spawn choisi aleatoirement parmi tous ceux configures pour cette equipe.
+     * Utile quand il y a plusieurs joueurs par equipe : ca evite qu'ils apparaissent tous
+     * exactement au meme endroit. Renvoie null si aucun spawn n'est configure pour l'equipe.
+     */
+    public Location getRandomSpawn(int teamIndex) {
+        List<Location> list = teamSpawns.get(teamIndex);
+        if (list == null || list.isEmpty()) return null;
+        if (list.size() == 1) return list.get(0);
+        return list.get(ThreadLocalRandom.current().nextInt(list.size()));
     }
 
     public boolean isFullyConfigured() {
-        if (lobbyLocation == null || !hasVoidY()) return false;
+        if (lobbyLocation == null) return false;
+        if (!hasVoidY() && !hasZone()) return false;
         for (int i = 0; i < teamCount; i++) {
-            if (!teamSpawns.containsKey(i)) return false;
+            if (getSpawnCount(i) == 0) return false;
         }
         return true;
     }
@@ -221,18 +308,119 @@ public class Arena {
         teamDamage.clear();
     }
 
-    // ---- Scoreboard dedie (sidebar + equipes colorees) ----
+    // ---- Statistiques individuelles de la partie en cours ----
 
-    /** Cree (si besoin) et retourne le scoreboard prive de cette arene. */
-    public Scoreboard getScoreboard() {
-        if (scoreboard == null) {
-            scoreboard = Bukkit.getScoreboardManager().getNewScoreboard();
-        }
-        return scoreboard;
+    public void addKill(UUID uuid) {
+        matchKills.merge(uuid, 1, Integer::sum);
     }
 
-    public List<String> getSidebarEntries() {
-        return sidebarEntries;
+    public void addDeath(UUID uuid) {
+        matchDeaths.merge(uuid, 1, Integer::sum);
+    }
+
+    public void addPlayerDamage(UUID uuid, double amount) {
+        matchDamage.merge(uuid, amount, Double::sum);
+    }
+
+    public int getKills(UUID uuid) {
+        return matchKills.getOrDefault(uuid, 0);
+    }
+
+    public int getDeaths(UUID uuid) {
+        return matchDeaths.getOrDefault(uuid, 0);
+    }
+
+    public double getPlayerDamage(UUID uuid) {
+        return matchDamage.getOrDefault(uuid, 0.0);
+    }
+
+    /** XP Push (voir LevelManager) gagnee par ce joueur durant cette partie. */
+    public void addMatchXp(UUID uuid, double amount) {
+        if (amount <= 0) return;
+        matchXpGained.merge(uuid, amount, Double::sum);
+    }
+
+    public double getMatchXp(UUID uuid) {
+        return matchXpGained.getOrDefault(uuid, 0.0);
+    }
+
+    public void resetMatchStats() {
+        matchKills.clear();
+        matchDeaths.clear();
+        matchDamage.clear();
+        matchXpGained.clear();
+    }
+
+    // ---- Chronometre de la partie ----
+
+    /** Memorise l'instant de demarrage de la partie (pour le chrono du sidebar). */
+    public void markStarted() {
+        startTimeMillis = System.currentTimeMillis();
+    }
+
+    /** Nombre de secondes ecoulees depuis le debut de la partie (0 si pas encore demarree). */
+    public long getElapsedSeconds() {
+        if (startTimeMillis <= 0L) return 0L;
+        return (System.currentTimeMillis() - startTimeMillis) / 1000L;
+    }
+
+    // ---- Spectateurs ----
+
+    public Location getSpectatorSpawn() {
+        return spectatorSpawn;
+    }
+
+    public void setSpectatorSpawn(Location spectatorSpawn) {
+        this.spectatorSpawn = spectatorSpawn;
+    }
+
+    /**
+     * Point de teleportation utilise pour les spectateurs : le point dedie s'il est
+     * configure, sinon le lobby de l'arene.
+     */
+    public Location getSpectatorTeleportLocation() {
+        if (spectatorSpawn != null) return spectatorSpawn.clone();
+        if (lobbyLocation != null) return lobbyLocation.clone();
+        return null;
+    }
+
+    public boolean isSpectatingEnabled() {
+        return spectatingEnabled;
+    }
+
+    public void setSpectatingEnabled(boolean spectatingEnabled) {
+        this.spectatingEnabled = spectatingEnabled;
+    }
+
+    public boolean isSpectating(UUID uuid) {
+        return spectators.contains(uuid);
+    }
+
+    public Set<UUID> getSpectators() {
+        return spectators;
+    }
+
+    public int countSpectators() {
+        return spectators.size();
+    }
+
+    /** Enregistre un spectateur en memorisant d'ou il vient, pour pouvoir l'y renvoyer. */
+    public void addSpectator(UUID uuid, Location previousLocation, GameMode previousMode) {
+        spectators.add(uuid);
+        if (previousLocation != null) preSpectateLocations.put(uuid, previousLocation);
+        if (previousMode != null) preSpectateModes.put(uuid, previousMode);
+    }
+
+    /** Retire un spectateur et renvoie la position d'ou il venait (peut etre null). */
+    public Location removeSpectator(UUID uuid) {
+        spectators.remove(uuid);
+        preSpectateModes.remove(uuid);
+        return preSpectateLocations.remove(uuid);
+    }
+
+    /** Mode de jeu du spectateur avant son passage en observation (SURVIVAL par defaut). */
+    public GameMode getPreSpectateMode(UUID uuid) {
+        return preSpectateModes.getOrDefault(uuid, GameMode.SURVIVAL);
     }
 
     public void resetAll() {
@@ -240,11 +428,68 @@ public class Arena {
         returnLocations.clear();
         teamScores.clear();
         teamDamage.clear();
+        resetMatchStats();
+        startTimeMillis = 0L;
         state = State.WAITING;
     }
 
     public static ChatColor[] defaultColorOrder() {
         return new ChatColor[]{ChatColor.LIGHT_PURPLE, ChatColor.DARK_PURPLE, ChatColor.DARK_BLUE, ChatColor.BLUE};
+    }
+
+    /**
+     * Palette de vitres teintees utilisee pour representer chaque equipe dans les GUIs
+     * de configuration des spawns (voir gui/SpawnGUI). La palette depend du nombre
+     * d'equipes de l'arene :
+     *  - 2 equipes  -> Magenta / Rose (deux teintes bien distinctes, ideal pour un duel)
+     *  - 3/4 equipes -> Violet / Bleu clair / Bleu (degrade violet-bleu, plus d'equipes
+     *                    a differencier donc on etale sur plusieurs teintes de bleu)
+     */
+    public static Material[] spawnGlassColors(int teamCount) {
+        Material[] palette;
+        if (teamCount <= 2) {
+            palette = new Material[]{Material.MAGENTA_STAINED_GLASS_PANE, Material.PINK_STAINED_GLASS_PANE};
+        } else {
+            palette = new Material[]{Material.PURPLE_STAINED_GLASS_PANE, Material.LIGHT_BLUE_STAINED_GLASS_PANE,
+                    Material.BLUE_STAINED_GLASS_PANE, Material.CYAN_STAINED_GLASS_PANE};
+        }
+        return Arrays.copyOf(palette, Math.min(teamCount, palette.length));
+    }
+
+    /**
+     * Nom lisible (en francais) de la couleur associee a une equipe dans la palette
+     * ci-dessus, pour affichage dans les GUIs/messages.
+     */
+    public static String spawnColorName(int teamCount, int teamIndex) {
+        if (teamCount <= 2) {
+            return teamIndex == 0 ? "Magenta" : "Rose";
+        }
+        String[] names = {"Violet", "Bleu clair", "Bleu", "Cyan"};
+        return teamIndex < names.length ? names[teamIndex] : ("Equipe " + (teamIndex + 1));
+    }
+
+    // ---- Zone du lobby d'attente (structure construite en jeu) ----
+
+    public Location getLobbyZonePos1() { return lobbyZonePos1; }
+    public void setLobbyZonePos1(Location loc) { this.lobbyZonePos1 = loc; }
+
+    public Location getLobbyZonePos2() { return lobbyZonePos2; }
+    public void setLobbyZonePos2(Location loc) { this.lobbyZonePos2 = loc; }
+
+    /** True si les deux coins du lobby sont definis et dans le meme monde. */
+    public boolean hasLobbyZone() {
+        return lobbyZonePos1 != null && lobbyZonePos2 != null
+                && lobbyZonePos1.getWorld() != null && lobbyZonePos2.getWorld() != null
+                && lobbyZonePos1.getWorld().equals(lobbyZonePos2.getWorld());
+    }
+
+    /** Nombre de blocs contenus dans la zone de lobby (0 si elle n'est pas definie). */
+    public long getLobbyZoneVolume() {
+        if (!hasLobbyZone()) return 0L;
+        long dx = Math.abs(lobbyZonePos1.getBlockX() - lobbyZonePos2.getBlockX()) + 1L;
+        long dy = Math.abs(lobbyZonePos1.getBlockY() - lobbyZonePos2.getBlockY()) + 1L;
+        long dz = Math.abs(lobbyZonePos1.getBlockZ() - lobbyZonePos2.getBlockZ()) + 1L;
+        return dx * dy * dz;
     }
 
     // ---- Zone protegee ----

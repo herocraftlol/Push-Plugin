@@ -6,13 +6,11 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.LeatherArmorMeta;
-import org.bukkit.scoreboard.Criteria;
-import org.bukkit.scoreboard.DisplaySlot;
-import org.bukkit.scoreboard.Objective;
-import org.bukkit.scoreboard.Scoreboard;
-import org.bukkit.scoreboard.Team;
+import org.bukkit.enchantments.Enchantment;
+import org.bukkit.inventory.ItemFlag;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
+import com.push.plugin.chat.QuickMessage;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -34,6 +32,11 @@ public class ArenaManager {
     private final Map<String, Integer> pointResumeTasks = new HashMap<>();
     // Flag : arene en pause apres un point (interdit les kills/moves pendant le countdown)
     private final Set<String> arenasPaused = new HashSet<>();
+    // Secondes restantes des countdowns en cours, pour pouvoir les afficher sur le sidebar
+    private final Map<String, Integer> startCountdownRemaining = new HashMap<>();
+    private final Map<String, Integer> resumeCountdownRemaining = new HashMap<>();
+    // Fin du temps de recharge de l'arc par joueur (horodatage en millisecondes)
+    private final Map<UUID, Long> bowCooldownUntil = new HashMap<>();
 
     public ArenaManager(PushPlugin plugin) {
         this.plugin = plugin;
@@ -64,6 +67,16 @@ public class ArenaManager {
             if (sec.contains("zonePos2")) {
                 arena.setZonePos2(deserializeLocation(sec.getConfigurationSection("zonePos2")));
             }
+            if (sec.contains("spectatorSpawn")) {
+                arena.setSpectatorSpawn(deserializeLocation(sec.getConfigurationSection("spectatorSpawn")));
+            }
+            if (sec.contains("lobbyZonePos1")) {
+                arena.setLobbyZonePos1(deserializeLocation(sec.getConfigurationSection("lobbyZonePos1")));
+            }
+            if (sec.contains("lobbyZonePos2")) {
+                arena.setLobbyZonePos2(deserializeLocation(sec.getConfigurationSection("lobbyZonePos2")));
+            }
+            arena.setSpectatingEnabled(sec.getBoolean("spectatingEnabled", true));
             arena.setTeamCount(sec.getInt("teamCount", 2));
             arena.setTeamSize(sec.getInt("teamSize", 8));
             arena.setMinPlayersToStart(sec.getInt("minPlayersToStart", 2));
@@ -72,8 +85,24 @@ public class ArenaManager {
             if (spawns != null) {
                 for (String idxStr : spawns.getKeys(false)) {
                     int idx = Integer.parseInt(idxStr);
-                    Location loc = deserializeLocation(spawns.getConfigurationSection(idxStr));
-                    arena.setTeamSpawn(idx, loc);
+                    ConfigurationSection teamSec = spawns.getConfigurationSection(idxStr);
+                    if (teamSec == null) continue;
+
+                    // Nouveau format : arenas.<nom>.teamSpawns.<team>.<spawnNumero>.x/y/z/world
+                    // Ancien format (retrocompatibilite) : arenas.<nom>.teamSpawns.<team>.x/y/z/world
+                    if (teamSec.contains("world")) {
+                        Location loc = deserializeLocation(teamSec);
+                        arena.setSpawn(idx, 1, loc);
+                    } else {
+                        List<String> spawnKeys = new ArrayList<>(teamSec.getKeys(false));
+                        spawnKeys.sort(Comparator.comparingInt(Integer::parseInt));
+                        int spawnNumber = 1;
+                        for (String spawnKey : spawnKeys) {
+                            Location loc = deserializeLocation(teamSec.getConfigurationSection(spawnKey));
+                            arena.setSpawn(idx, spawnNumber, loc);
+                            spawnNumber++;
+                        }
+                    }
                 }
             }
 
@@ -93,6 +122,7 @@ public class ArenaManager {
         plugin.getConfig().set(path + ".teamCount", arena.getTeamCount());
         plugin.getConfig().set(path + ".teamSize", arena.getTeamSize());
         plugin.getConfig().set(path + ".minPlayersToStart", arena.getMinPlayersToStart());
+        plugin.getConfig().set(path + ".spectatingEnabled", arena.isSpectatingEnabled());
         if (arena.getLobbyLocation() != null) {
             serializeLocation(path + ".lobby", arena.getLobbyLocation());
         }
@@ -105,8 +135,21 @@ public class ArenaManager {
         if (arena.getZonePos2() != null) {
             serializeLocation(path + ".zonePos2", arena.getZonePos2());
         }
-        for (Map.Entry<Integer, Location> e : arena.getTeamSpawns().entrySet()) {
-            serializeLocation(path + ".teamSpawns." + e.getKey(), e.getValue());
+        if (arena.getSpectatorSpawn() != null) {
+            serializeLocation(path + ".spectatorSpawn", arena.getSpectatorSpawn());
+        }
+        if (arena.getLobbyZonePos1() != null) {
+            serializeLocation(path + ".lobbyZonePos1", arena.getLobbyZonePos1());
+        }
+        if (arena.getLobbyZonePos2() != null) {
+            serializeLocation(path + ".lobbyZonePos2", arena.getLobbyZonePos2());
+        }
+        plugin.getConfig().set(path + ".teamSpawns", null);
+        for (Map.Entry<Integer, List<Location>> e : arena.getTeamSpawns().entrySet()) {
+            List<Location> list = e.getValue();
+            for (int i = 0; i < list.size(); i++) {
+                serializeLocation(path + ".teamSpawns." + e.getKey() + "." + (i + 1), list.get(i));
+            }
         }
         plugin.saveConfig();
     }
@@ -114,6 +157,7 @@ public class ArenaManager {
     public void deleteArenaFromConfig(String name) {
         plugin.getConfig().set("arenas." + name, null);
         plugin.saveConfig();
+        plugin.getLobbyZoneManager().deleteSnapshot(name);
     }
 
     private void serializeLocation(String path, Location loc) {
@@ -210,7 +254,7 @@ public class ArenaManager {
         resetPlayerForLobby(player);
         player.teleport(arena.getLobbyLocation());
 
-        player.setScoreboard(arena.getScoreboard());
+        plugin.getScoreboardManager().show(player);
         updateSidebar(arena);
 
         ChatColor color = getTeamColor(arena, team);
@@ -221,6 +265,7 @@ public class ArenaManager {
         broadcastToArena(arena, ChatColor.GRAY + player.getName() + " a rejoint le lobby ("
                 + arena.countPlayers() + "/" + arena.getMaxPlayers() + ")");
 
+        giveLobbyItems(player, arena);
         giveAdminStartItem(player, arena);
 
         if (arena.countPlayers() >= arena.getMinPlayersToStart()) {
@@ -246,10 +291,11 @@ public class ArenaManager {
         UUID uuid = player.getUniqueId();
         Location ret = arena.getReturnLocation(uuid);
         arena.removePlayer(uuid);
-        removeFromScoreboardTeam(player, arena);
         resetPlayerInventory(player);
+        clearBowCooldown(player);
+        resetTabList(player);
 
-        player.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
+        plugin.getScoreboardManager().remove(player);
 
         if (teleportBack && ret != null) {
             player.teleport(ret);
@@ -262,7 +308,8 @@ public class ArenaManager {
         if (arena.countPlayers() == 0 && arena.getState() != Arena.State.WAITING) {
             cancelStartCountdown(arena);
             arenasPaused.remove(arena.getName().toLowerCase());
-            arena.resetAll();
+            removeAllSpectators(arena);
+            reopenArena(arena);
         } else if (arena.getState() == Arena.State.WAITING) {
             // Si le countdown etait lance mais qu'il n'y a plus assez de joueurs, on l'annule
             if (arena.countPlayers() < arena.getMinPlayersToStart()) {
@@ -273,7 +320,7 @@ public class ArenaManager {
     }
 
     private void giveAdminStartItem(Player player, Arena arena) {
-        if (player.hasPermission("arenapvp.admin")) {
+        if (player.hasPermission("push.admin")) {
             ItemStack diamond = new ItemStack(Material.DIAMOND, 1);
             ItemMeta meta = diamond.getItemMeta();
             meta.setDisplayName(ChatColor.AQUA + "Lancer la partie maintenant");
@@ -292,6 +339,68 @@ public class ArenaManager {
         for (PotionEffect eff : new ArrayList<>(player.getActivePotionEffects())) {
             player.removePotionEffect(eff.getType());
         }
+    }
+
+    /**
+     * Donne les items du lobby d'attente (hors diamant admin, donne separement) :
+     * une barriere pour quitter au 5eme emplacement de la hotbar, et un item pour
+     * choisir sa couleur d'equipe.
+     */
+    private void giveLobbyItems(Player player, Arena arena) {
+        ItemStack leaveItem = new ItemStack(Material.BARRIER);
+        ItemMeta leaveMeta = leaveItem.getItemMeta();
+        leaveMeta.setDisplayName(ChatColor.RED + "" + ChatColor.BOLD + "Quitter");
+        leaveMeta.setLore(List.of(ChatColor.GRAY + "Clique pour quitter l'arene."));
+        leaveItem.setItemMeta(leaveMeta);
+        player.getInventory().setItem(4, leaveItem);
+
+        int team = arena.getTeamOf(player.getUniqueId());
+        ChatColor color = getTeamColor(arena, team);
+        String teamName = getTeamDisplayName(arena, team);
+        ItemStack teamItem = new ItemStack(teamWoolMaterial(color));
+        ItemMeta teamMeta = teamItem.getItemMeta();
+        teamMeta.setDisplayName(color + "" + ChatColor.BOLD + "Equipe : " + teamName);
+        teamMeta.setLore(List.of(ChatColor.GRAY + "Clique pour changer de couleur d'equipe."));
+        teamItem.setItemMeta(teamMeta);
+        player.getInventory().setItem(5, teamItem);
+    }
+
+    /** Choisit une laine de couleur qui se rapproche visuellement de la couleur d'equipe. */
+    private Material teamWoolMaterial(ChatColor color) {
+        return switch (color) {
+            case DARK_PURPLE -> Material.MAGENTA_WOOL;
+            case LIGHT_PURPLE -> Material.PINK_WOOL;
+            case BLUE -> Material.PURPLE_WOOL;
+            case DARK_BLUE -> Material.BLUE_WOOL;
+            case RED -> Material.RED_WOOL;
+            case GREEN -> Material.GREEN_WOOL;
+            case YELLOW -> Material.YELLOW_WOOL;
+            case AQUA -> Material.CYAN_WOOL;
+            default -> Material.WHITE_WOOL;
+        };
+    }
+
+    /**
+     * Change la couleur (l'equipe) d'un joueur en lobby d'attente. Refuse si l'equipe
+     * cible est deja pleine. Redonne l'item de selection avec la nouvelle couleur.
+     */
+    public boolean changeTeam(Player player, Arena arena, int newTeam) {
+        if (arena.getState() != Arena.State.WAITING) return false;
+        int currentTeam = arena.getTeamOf(player.getUniqueId());
+        if (currentTeam == newTeam) return false;
+        if (arena.getPlayersInTeam(newTeam).size() >= arena.getTeamSize()) {
+            player.sendMessage(ChatColor.RED + "Cette equipe est deja pleine.");
+            return false;
+        }
+        arena.getPlayerTeamMap().put(player.getUniqueId(), newTeam);
+        giveLobbyItems(player, arena);
+        giveAdminStartItem(player, arena);
+        updateSidebar(arena);
+
+        ChatColor color = getTeamColor(arena, newTeam);
+        String teamName = getTeamDisplayName(arena, newTeam);
+        player.sendMessage(ChatColor.GREEN + "Tu es maintenant dans l'equipe " + color + teamName + ChatColor.GREEN + " !");
+        return true;
     }
 
     private void resetPlayerInventory(Player player) {
@@ -331,8 +440,10 @@ public class ArenaManager {
         if (startCountdownTasks.containsKey(key)) return; // deja en cours
 
         int[] remaining = {30};
+        startCountdownRemaining.put(key, remaining[0]);
         int taskId = Bukkit.getScheduler().scheduleSyncRepeatingTask(plugin, () -> {
             int r = remaining[0];
+            startCountdownRemaining.put(key, Math.max(0, r));
 
             if (arena.getState() != Arena.State.WAITING || arena.countPlayers() == 0) {
                 cancelStartCountdown(arena);
@@ -369,10 +480,21 @@ public class ArenaManager {
 
     private void cancelStartCountdown(Arena arena) {
         String key = arena.getName().toLowerCase();
+        startCountdownRemaining.remove(key);
         Integer taskId = startCountdownTasks.remove(key);
         if (taskId != null) {
             Bukkit.getScheduler().cancelTask(taskId);
         }
+    }
+
+    /** Secondes restantes avant le lancement automatique, ou -1 si aucun countdown en cours. */
+    public int getStartCountdownRemaining(Arena arena) {
+        return startCountdownRemaining.getOrDefault(arena.getName().toLowerCase(), -1);
+    }
+
+    /** Secondes restantes avant la reprise apres un point, ou -1 si aucune pause en cours. */
+    public int getResumeCountdownRemaining(Arena arena) {
+        return resumeCountdownRemaining.getOrDefault(arena.getName().toLowerCase(), -1);
     }
 
     // ================= Demarrage =================
@@ -382,8 +504,8 @@ public class ArenaManager {
         arena.setState(Arena.State.RUNNING);
         arena.resetScores();
         arena.resetDamage();
-
-        setupScoreboardTeams(arena);
+        arena.resetMatchStats();
+        arena.markStarted();
 
         for (Map.Entry<UUID, Integer> entry : new HashMap<>(arena.getPlayerTeamMap()).entrySet()) {
             Player player = Bukkit.getPlayer(entry.getKey());
@@ -391,8 +513,12 @@ public class ArenaManager {
             int team = entry.getValue();
             teleportToTeamSpawn(player, arena, team);
             giveKit(player, arena);
-            addToScoreboardTeam(player, arena, team);
+            plugin.getScoreboardManager().show(player);
         }
+
+        // Les joueurs sont deja sur leurs spawns : on peut effacer la salle d'attente,
+        // qui se trouve generalement juste au-dessus de la zone de jeu.
+        plugin.getLobbyZoneManager().clear(arena);
 
         updateSidebar(arena);
 
@@ -408,7 +534,7 @@ public class ArenaManager {
     }
 
     private void teleportToTeamSpawn(Player player, Arena arena, int team) {
-        Location spawn = arena.getTeamSpawns().get(team);
+        Location spawn = arena.getRandomSpawn(team);
         if (spawn != null) {
             player.teleport(spawn);
         }
@@ -422,20 +548,19 @@ public class ArenaManager {
         player.setFoodLevel(20);
         player.setFireTicks(0);
 
+        // Un kit neuf remet toujours l'arc en etat de tirer immediatement
+        clearBowCooldown(player);
+
         ItemStack sword = new ItemStack(Material.STONE_SWORD);
         ItemMeta swordMeta = sword.getItemMeta();
         swordMeta.setUnbreakable(true);
         swordMeta.setDisplayName(ChatColor.GRAY + "Epee d'arene");
         sword.setItemMeta(swordMeta);
 
-        // Arc simple (sans INFINITY) : les fleches sont donnees en quantite au slot 8
-        ItemStack bow = new ItemStack(Material.BOW);
-        ItemMeta bowMeta = bow.getItemMeta();
-        bowMeta.setUnbreakable(true);
-        bowMeta.setDisplayName(ChatColor.GRAY + "Arc d'arene");
-        bow.setItemMeta(bowMeta);
+        ItemStack bow = createArenaBow();
 
-        // 64 fleches vanilla au slot 8 (sans ItemMeta custom pour eviter que Bukkit les rejette)
+        // Munition : une seule fleche suffit avec INFINITY, mais on en met un paquet pour
+        // rester tolerant si une fleche est malgre tout consommee par une version du serveur.
         ItemStack arrow = new ItemStack(Material.ARROW, 64);
 
         int team = arena.getTeamOf(player.getUniqueId());
@@ -453,6 +578,84 @@ public class ArenaManager {
         player.getInventory().setChestplate(chestplate);
         player.getInventory().setLeggings(leggings);
         player.getInventory().setBoots(boots);
+    }
+
+    /**
+     * Cree l'arc du kit. Il porte l'enchantement INFINITY : la fleche presente dans
+     * l'inventaire n'est jamais consommee, ce qui garantit que le joueur puisse toujours
+     * bander son arc (sans munition, l'arc est tout simplement inutilisable en jeu).
+     */
+    public static ItemStack createArenaBow() {
+        ItemStack bow = new ItemStack(Material.BOW);
+        ItemMeta bowMeta = bow.getItemMeta();
+        bowMeta.setUnbreakable(true);
+        bowMeta.setDisplayName(ChatColor.GRAY + "Arc d'arene");
+        bowMeta.addEnchant(Enchantment.INFINITY, 1, true);
+        bowMeta.addItemFlags(ItemFlag.HIDE_ENCHANTS, ItemFlag.HIDE_UNBREAKABLE);
+        bow.setItemMeta(bowMeta);
+        return bow;
+    }
+
+    /**
+     * Redonne uniquement l'arc et sa munition, sans toucher au reste de l'inventaire
+     * ni a la vie du joueur (utilise par la verification periodique en cours de partie).
+     */
+    public void giveBowOnly(Player player) {
+        player.getInventory().setItem(1, createArenaBow());
+        ItemStack slot8 = player.getInventory().getItem(8);
+        if (slot8 == null || slot8.getType() != Material.ARROW || slot8.getAmount() < 1) {
+            player.getInventory().setItem(8, new ItemStack(Material.ARROW, 64));
+        }
+    }
+
+    /**
+     * Attribue l'XP de temps de jeu (voir LevelManager) a tous les joueurs actuellement
+     * en partie (etat RUNNING), sur toutes les arenes. Appelee une fois par minute.
+     */
+    public void awardPlaytimeXp() {
+        for (Arena arena : arenas.values()) {
+            if (arena.getState() != Arena.State.RUNNING) continue;
+            for (Player p : getOnlinePlayersInArena(arena)) {
+                double xp = plugin.getLevelManager().addPlaytimeXp(p);
+                arena.addMatchXp(p.getUniqueId(), xp);
+            }
+        }
+    }
+
+    // ================= Messages rapides (quick-chat) =================
+
+    /**
+     * Remplace TEMPORAIREMENT l'inventaire d'un joueur par les 4 blocs de couleur
+     * "message rapide" (voir QuickMessage), pendant la pause qui suit un point ou a
+     * l'ecran de victoire. Le kit de combat est redonne au round suivant (giveKit).
+     */
+    public void giveQuickChatItems(Player player) {
+        if (!plugin.getConfig().getBoolean("quick-chat.enabled", true)) return;
+        player.getInventory().clear();
+        for (QuickMessage message : QuickMessage.values()) {
+            player.getInventory().setItem(message.getHotbarSlot(), message.createItem(player));
+        }
+    }
+
+    /**
+     * Envoie un message rapide dans le chat de l'arene. Chaque destinataire recoit le
+     * texte traduit dans SA PROPRE langue (voir QuickMessage#getTextFor).
+     */
+    public void sendQuickChatMessage(Arena arena, Player sender, QuickMessage message) {
+        for (UUID uuid : arena.getPlayerTeamMap().keySet()) {
+            Player recipient = Bukkit.getPlayer(uuid);
+            if (recipient == null) continue;
+            String text = message.getTextFor(recipient);
+            recipient.sendMessage(message.getColor() + sender.getName() + ChatColor.GRAY + " \u00BB "
+                    + message.getColor() + text);
+        }
+        for (UUID uuid : arena.getSpectators()) {
+            Player recipient = Bukkit.getPlayer(uuid);
+            if (recipient == null) continue;
+            String text = message.getTextFor(recipient);
+            recipient.sendMessage(message.getColor() + sender.getName() + ChatColor.GRAY + " \u00BB "
+                    + message.getColor() + text);
+        }
     }
 
     /** Cree la fleche dediee d'arene. */
@@ -542,10 +745,16 @@ public class ArenaManager {
             Player p = Bukkit.getPlayer(entry.getKey());
             if (p == null) continue;
             int team = entry.getValue();
-            teleportToTeamSpawn(p, arena, team);
-            // Retirer les items pendant le countdown (ne peut pas combattre)
-            p.getInventory().clear();
+            if (!p.isDead()) {
+                teleportToTeamSpawn(p, arena, team);
+            }
+            // Retirer le kit de combat pendant la pause (ne peut pas combattre) et le
+            // remplacer par les blocs de message rapide, comme dans HikaBrain.
             clearArmor(p);
+            clearBowCooldown(p);
+            if (!p.isDead()) {
+                giveQuickChatItems(p);
+            }
             p.setHealth(20.0);
             p.setFoodLevel(20);
             p.setFireTicks(0);
@@ -555,16 +764,19 @@ public class ArenaManager {
             p.playSound(p.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.2f);
         }
 
-        int[] remaining = {3};
+        int[] remaining = {Math.max(1, plugin.getConfig().getInt("round-resume-seconds", 3))};
+        resumeCountdownRemaining.put(key, remaining[0]);
         // Utiliser un tableau pour capturer le taskId dans le lambda
         int[] taskIdHolder = {-1};
 
         int taskId = Bukkit.getScheduler().scheduleSyncRepeatingTask(plugin, () -> {
             int r = remaining[0];
+            resumeCountdownRemaining.put(key, Math.max(0, r));
 
             if (arena.getState() != Arena.State.RUNNING) {
                 arenasPaused.remove(key);
                 pointResumeTasks.remove(key);
+                resumeCountdownRemaining.remove(key);
                 Bukkit.getScheduler().cancelTask(taskIdHolder[0]);
                 return;
             }
@@ -572,12 +784,17 @@ public class ArenaManager {
             if (r <= 0) {
                 arenasPaused.remove(key);
                 pointResumeTasks.remove(key);
+                resumeCountdownRemaining.remove(key);
                 // Retirer l'effet de ralentissement et redonner le kit a tout le monde
                 for (UUID uuid : new ArrayList<>(arena.getPlayerTeamMap().keySet())) {
                     Player p = Bukkit.getPlayer(uuid);
                     if (p != null) {
                         p.removePotionEffect(PotionEffectType.SLOWNESS);
-                        giveKit(p, arena);
+                        // Un joueur encore sur l'ecran de mort recevra son kit au respawn :
+                        // le lui donner maintenant le ferait reapparaitre les mains vides.
+                        if (!p.isDead()) {
+                            giveKit(p, arena);
+                        }
                         p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.5f);
                     }
                 }
@@ -609,6 +826,12 @@ public class ArenaManager {
         updateSidebar(arena);
     }
 
+    /** Enregistre les degats infliges par un joueur pour la partie en cours (sidebar). */
+    public void addMatchDamage(Arena arena, Player damager, double amount) {
+        if (amount <= 0) return;
+        arena.addPlayerDamage(damager.getUniqueId(), amount);
+    }
+
     /** Enregistre les degats infliges par un joueur dans ses stats persistantes. */
     public void addDamageToPlayerStats(org.bukkit.entity.Player damager, double amount) {
         plugin.getStatsManager().addDamage(damager.getUniqueId(), damager.getName(), amount);
@@ -625,7 +848,65 @@ public class ArenaManager {
             endGame(arena, winner);
         } else if (teamsWithPlayers.isEmpty()) {
             arenasPaused.remove(arena.getName().toLowerCase());
-            arena.resetAll();
+            removeAllSpectators(arena);
+            reopenArena(arena);
+        }
+    }
+
+    /**
+     * Affiche le recapitulatif de fin de partie, comme dans HikaBrain : top eliminations,
+     * top degats, et pour chaque joueur individuellement le nombre de points (XP Push)
+     * gagnes durant cette partie.
+     */
+    private void sendEndGameSummary(Arena arena) {
+        List<UUID> participants = new ArrayList<>(arena.getPlayerTeamMap().keySet());
+        if (participants.isEmpty()) return;
+
+        List<UUID> topKills = new ArrayList<>(participants);
+        topKills.sort((a, b) -> Integer.compare(arena.getKills(b), arena.getKills(a)));
+
+        List<UUID> topDamage = new ArrayList<>(participants);
+        topDamage.sort((a, b) -> Double.compare(arena.getPlayerDamage(b), arena.getPlayerDamage(a)));
+
+        broadcastToArena(arena, ChatColor.GRAY + "" + ChatColor.STRIKETHROUGH + "                              ");
+        broadcastToArena(arena, ChatColor.YELLOW + "" + ChatColor.BOLD + "\u2694 TOP ELIMINATIONS");
+        appendTopLines(arena, topKills, uuid -> arena.getKills(uuid) + " kill" + (arena.getKills(uuid) == 1 ? "" : "s"));
+
+        broadcastToArena(arena, ChatColor.RED + "" + ChatColor.BOLD + "\u2763 TOP DEGATS");
+        appendTopLines(arena, topDamage, uuid -> Math.round(arena.getPlayerDamage(uuid)) + " dgts");
+        broadcastToArena(arena, ChatColor.GRAY + "" + ChatColor.STRIKETHROUGH + "                              ");
+
+        // Points (XP Push) gagnes : message prive et personnalise pour chaque joueur
+        for (UUID uuid : participants) {
+            Player p = Bukkit.getPlayer(uuid);
+            if (p == null) continue;
+            int gained = (int) Math.round(arena.getMatchXp(uuid));
+            if (gained > 0) {
+                p.sendMessage(ChatColor.LIGHT_PURPLE + "" + ChatColor.BOLD + "\u2726 "
+                        + ChatColor.GRAY + "Tu as gagne " + ChatColor.LIGHT_PURPLE + gained + " points"
+                        + ChatColor.GRAY + " ce match ! " + ChatColor.DARK_GRAY
+                        + "(niveau " + plugin.getLevelManager().getLevel(uuid) + ")");
+            }
+        }
+    }
+
+    /** Les 3 premiers d'un classement, avec medaille, nom et la valeur formatee par valueFormatter. */
+    private void appendTopLines(Arena arena, List<UUID> sorted, java.util.function.Function<UUID, String> valueFormatter) {
+        String[] medals = {"&6#1", "&7#2", "&c#3"};
+        int shown = 0;
+        for (UUID uuid : sorted) {
+            if (shown >= 3) break;
+            Player p = Bukkit.getPlayer(uuid);
+            String name = p != null ? p.getName() : "Inconnu";
+            String value = valueFormatter.apply(uuid);
+            // On saute silencieusement les joueurs a 0 (pas de kills/degats du tout)
+            if (value.startsWith("0 ")) continue;
+            broadcastToArena(arena, ChatColor.translateAlternateColorCodes('&', medals[shown]) + ChatColor.GRAY
+                    + " " + ChatColor.WHITE + name + ChatColor.GRAY + " - " + ChatColor.WHITE + value);
+            shown++;
+        }
+        if (shown == 0) {
+            broadcastToArena(arena, ChatColor.GRAY + "  (aucune donnee)");
         }
     }
 
@@ -643,6 +924,8 @@ public class ArenaManager {
             Player p = Bukkit.getPlayer(uuid);
             if (p != null) {
                 p.setGameMode(GameMode.SPECTATOR);
+                // Blocs de message rapide a l'ecran de victoire, comme pendant la pause
+                giveQuickChatItems(p);
             }
         }
 
@@ -655,6 +938,9 @@ public class ArenaManager {
             String name = p != null ? p.getName() : "Inconnu";
             winnerNames.add(name);
             plugin.getStatsManager().addWin(uuid, name);
+            if (p != null) {
+                arena.addMatchXp(uuid, plugin.getLevelManager().addWinXp(p));
+            }
         }
 
         broadcastToArena(arena, ChatColor.GOLD + "" + ChatColor.BOLD + "Victoire de l'equipe "
@@ -662,12 +948,16 @@ public class ArenaManager {
         broadcastToArena(arena, color + "" + ChatColor.BOLD + teamName + ChatColor.GRAY
                 + " : " + ChatColor.WHITE + String.join(ChatColor.GRAY + ", " + ChatColor.WHITE, winnerNames));
 
+        sendEndGameSummary(arena);
+
         // Son de victoire
         for (Player p : getOnlinePlayersInArena(arena)) {
             p.playSound(p.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.0f);
         }
 
         updateSidebar(arena);
+
+        updateTabList(arena);
 
         int delay = plugin.getConfig().getInt("end-delay-seconds", 5);
         BukkitTaskHandle handle = new BukkitTaskHandle();
@@ -680,12 +970,15 @@ public class ArenaManager {
     }
 
     private void finishAndReset(Arena arena) {
+        // Les spectateurs sont renvoyes chez eux en meme temps que les joueurs
+        removeAllSpectators(arena);
+
         for (UUID uuid : new ArrayList<>(arena.getPlayerTeamMap().keySet())) {
             Player player = Bukkit.getPlayer(uuid);
             if (player != null) {
-                removeFromScoreboardTeam(player, arena);
                 resetPlayerInventory(player);
-                player.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
+                clearBowCooldown(player);
+                plugin.getScoreboardManager().remove(player);
                 Location ret = arena.getReturnLocation(uuid);
                 if (ret != null) {
                     player.teleport(ret);
@@ -694,90 +987,176 @@ public class ArenaManager {
                 resetTabList(player);
             }
         }
+        reopenArena(arena);
+    }
+
+    /**
+     * Remet l'arene a l'etat "ouverte" : scores et joueurs remis a zero, et surtout
+     * remise en place de la salle d'attente construite en jeu, effacee au lancement.
+     */
+    private void reopenArena(Arena arena) {
         arena.resetAll();
+        plugin.getLobbyZoneManager().paste(arena);
     }
 
-    // ================= Scoreboard / equipes visuelles =================
+    // ================= Sidebar =================
 
-    private String scoreboardTeamName(Arena arena, int teamIndex) {
-        String base = "apvp_" + arena.getName() + "_" + teamIndex;
-        return base.length() > 16 ? base.substring(0, 16) : base;
-    }
-
-    private void setupScoreboardTeams(Arena arena) {
-        Scoreboard board = arena.getScoreboard();
-        for (int i = 0; i < arena.getTeamCount(); i++) {
-            String name = scoreboardTeamName(arena, i);
-            Team team = board.getTeam(name);
-            if (team == null) {
-                team = board.registerNewTeam(name);
-            }
-            team.setColor(getTeamColor(arena, i));
-            team.setAllowFriendlyFire(false);
-            team.setCanSeeFriendlyInvisibles(true);
-        }
-    }
-
-    private void addToScoreboardTeam(Player player, Arena arena, int teamIndex) {
-        Scoreboard board = arena.getScoreboard();
-        Team team = board.getTeam(scoreboardTeamName(arena, teamIndex));
-        if (team != null) {
-            team.addEntry(player.getName());
-        }
-    }
-
-    private void removeFromScoreboardTeam(Player player, Arena arena) {
-        Scoreboard board = arena.getScoreboard();
-        for (int i = 0; i < arena.getTeamCount(); i++) {
-            Team team = board.getTeam(scoreboardTeamName(arena, i));
-            if (team != null) {
-                team.removeEntry(player.getName());
-            }
-        }
-    }
-
-    // ================= Sidebar (points + degats) =================
-
-    private static final String SIDEBAR_OBJECTIVE = "apvp_side";
-
-    private void ensureSidebar(Arena arena) {
-        Scoreboard board = arena.getScoreboard();
-        if (board.getObjective(SIDEBAR_OBJECTIVE) == null) {
-            Objective obj = board.registerNewObjective(SIDEBAR_OBJECTIVE, Criteria.DUMMY,
-                    ChatColor.GOLD + "" + ChatColor.BOLD + arena.getName());
-            obj.setDisplaySlot(DisplaySlot.SIDEBAR);
-        }
-    }
-
+    /**
+     * Rafraichit le sidebar de tous les joueurs et spectateurs de l'arene.
+     * Le contenu et l'affichage sont geres par ScoreboardManager (un sidebar par joueur).
+     */
     public void updateSidebar(Arena arena) {
-        ensureSidebar(arena);
-        Scoreboard board = arena.getScoreboard();
-        Objective obj = board.getObjective(SIDEBAR_OBJECTIVE);
-        if (obj == null) return;
+        plugin.getScoreboardManager().updateArena(arena);
+    }
 
-        for (String oldEntry : new ArrayList<>(arena.getSidebarEntries())) {
-            board.resetScores(oldEntry);
+    // ================= Temps de recharge de l'arc =================
+
+    /** Retourne true si l'arc du joueur est encore en rechargement. */
+    public boolean isBowOnCooldown(Player player) {
+        Long until = bowCooldownUntil.get(player.getUniqueId());
+        return until != null && System.currentTimeMillis() < until;
+    }
+
+    /** Secondes entieres restantes avant que le joueur puisse retirer (0 si pret). */
+    public int getBowCooldownRemaining(Player player) {
+        Long until = bowCooldownUntil.get(player.getUniqueId());
+        if (until == null) return 0;
+        long remaining = until - System.currentTimeMillis();
+        return remaining <= 0 ? 0 : (int) Math.ceil(remaining / 1000.0);
+    }
+
+    /**
+     * Demarre le rechargement de l'arc apres un tir. On s'appuie sur le cooldown d'item
+     * natif de Minecraft (qui affiche lui-meme le balayage gris sur l'icone et empeche
+     * de bander l'arc) : aucune tache repetee n'est necessaire, donc plus aucun risque
+     * qu'un cooldown reste bloque et rende l'arc definitivement inutilisable.
+     */
+    public void startBowCooldown(Player player) {
+        int seconds = Math.max(0, plugin.getConfig().getInt("bow-cooldown-seconds", 3));
+        if (seconds == 0) {
+            clearBowCooldown(player);
+            return;
         }
-        arena.getSidebarEntries().clear();
+        bowCooldownUntil.put(player.getUniqueId(), System.currentTimeMillis() + seconds * 1000L);
+        player.setCooldown(Material.BOW, seconds * 20);
+    }
 
-        if (arena.getState() == Arena.State.WAITING) {
-            String line = ChatColor.YELLOW + "En attente de joueurs... " + ChatColor.WHITE
-                    + arena.countPlayers() + "/" + arena.getMaxPlayers();
-            obj.getScore(line).setScore(0);
-            arena.getSidebarEntries().add(line);
-        } else {
-            for (int i = 0; i < arena.getTeamCount(); i++) {
-                ChatColor color = getTeamColor(arena, i);
-                String teamName = getTeamDisplayName(arena, i);
-                int points = arena.getScore(i);
-                int damage = (int) Math.round(arena.getDamage(i));
+    /** Rend l'arc immediatement utilisable (kit neuf, respawn, fin de partie...). */
+    public void clearBowCooldown(Player player) {
+        bowCooldownUntil.remove(player.getUniqueId());
+        if (player.isOnline()) {
+            player.setCooldown(Material.BOW, 0);
+        }
+    }
 
-                String line = color + teamName + ChatColor.GRAY + ": " + ChatColor.WHITE + points
-                        + ChatColor.GRAY + " pts" + ChatColor.DARK_GRAY + " | " + ChatColor.RED
-                        + damage + ChatColor.GRAY + " dgts" + ChatColor.values()[i % ChatColor.values().length];
+    // ================= Mode spectateur =================
 
-                obj.getScore(line).setScore(points);
-                arena.getSidebarEntries().add(line);
+    /** Retourne l'arene que ce joueur observe en spectateur, ou null. */
+    public Arena getSpectatedArena(UUID uuid) {
+        for (Arena arena : arenas.values()) {
+            if (arena.isSpectating(uuid)) return arena;
+        }
+        return null;
+    }
+
+    public boolean isSpectator(Player player) {
+        return getSpectatedArena(player.getUniqueId()) != null;
+    }
+
+    /**
+     * Fait passer un joueur en mode spectateur sur une arene : il voit la partie sans y
+     * participer, avec le meme sidebar de scores que les joueurs qu'il observe.
+     */
+    public boolean addSpectator(Player player, Arena arena) {
+        if (!arena.isSpectatingEnabled()) {
+            player.sendMessage(ChatColor.RED + "Le mode spectateur est desactive sur cette arene.");
+            return false;
+        }
+        if (!arena.isFullyConfigured()) {
+            player.sendMessage(ChatColor.RED + "Cette arene n'est pas entierement configuree.");
+            return false;
+        }
+        if (getArenaOf(player.getUniqueId()) != null) {
+            player.sendMessage(ChatColor.RED + "Tu joues deja dans une arene. Utilise /p leave d'abord.");
+            return false;
+        }
+        Arena current = getSpectatedArena(player.getUniqueId());
+        if (current != null) {
+            if (current == arena) {
+                player.sendMessage(ChatColor.RED + "Tu observes deja cette arene.");
+                return false;
+            }
+            removeSpectator(player);
+        }
+
+        Location target = arena.getSpectatorTeleportLocation();
+        if (target == null) {
+            player.sendMessage(ChatColor.RED + "Impossible d'observer cette arene : aucun point "
+                    + "de teleportation spectateur ni lobby configure.");
+            return false;
+        }
+
+        arena.addSpectator(player.getUniqueId(), player.getLocation().clone(), player.getGameMode());
+        player.teleport(target);
+        player.setGameMode(GameMode.SPECTATOR);
+        applySpectatorSettings(player);
+        plugin.getScoreboardManager().show(player);
+
+        player.sendMessage(ChatColor.GREEN + "Tu observes la partie sur l'arene "
+                + ChatColor.YELLOW + arena.getName() + ChatColor.GREEN + ".");
+        player.sendMessage(ChatColor.GRAY + "Utilise " + ChatColor.YELLOW + "/p unspectate"
+                + ChatColor.GRAY + " pour revenir a ta position de depart.");
+        broadcastToArena(arena, ChatColor.DARK_GRAY + player.getName() + " observe la partie.");
+        updateSidebar(arena);
+        return true;
+    }
+
+    /**
+     * Applique les reglages configurables du mode spectateur (config.yml, section
+     * "spectator") : vision nocturne, vitesse de vol... Le SPECTATOR de Minecraft vole
+     * deja nativement, ces options ne font qu'ameliorer le confort de visionnage.
+     */
+    private void applySpectatorSettings(Player player) {
+        if (plugin.getConfig().getBoolean("spectator.night-vision", true)) {
+            player.addPotionEffect(new PotionEffect(PotionEffectType.NIGHT_VISION, Integer.MAX_VALUE, 0, false, false, false));
+        }
+    }
+
+    private void clearSpectatorSettings(Player player) {
+        player.removePotionEffect(PotionEffectType.NIGHT_VISION);
+    }
+
+    /** Sort un joueur du mode spectateur et le renvoie d'ou il venait. */
+    public void removeSpectator(Player player) {
+        Arena arena = getSpectatedArena(player.getUniqueId());
+        if (arena == null) return;
+        removeSpectator(player, arena, true);
+    }
+
+    private void removeSpectator(Player player, Arena arena, boolean teleportBack) {
+        GameMode previousMode = arena.getPreSpectateMode(player.getUniqueId());
+        Location back = arena.removeSpectator(player.getUniqueId());
+
+        player.setGameMode(previousMode == GameMode.SPECTATOR ? GameMode.SURVIVAL : previousMode);
+        clearSpectatorSettings(player);
+        plugin.getScoreboardManager().remove(player);
+        resetTabList(player);
+
+        if (teleportBack && back != null) {
+            player.teleport(back);
+        }
+        player.sendMessage(ChatColor.GRAY + "Tu as quitte le mode spectateur.");
+        updateSidebar(arena);
+    }
+
+    /** Renvoie tous les spectateurs d'une arene a leur position d'origine. */
+    public void removeAllSpectators(Arena arena) {
+        for (UUID uuid : new ArrayList<>(arena.getSpectators())) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player != null) {
+                removeSpectator(player, arena, true);
+            } else {
+                arena.removeSpectator(uuid);
             }
         }
     }
