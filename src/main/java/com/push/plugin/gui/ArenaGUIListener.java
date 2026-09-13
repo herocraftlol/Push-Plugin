@@ -49,6 +49,16 @@ public class ArenaGUIListener implements Listener {
 
         player.closeInventory();
 
+        // Clic droit : observer la partie en spectateur plutot que d'y participer
+        if (event.isRightClick()) {
+            if (!player.hasPermission("push.spectate")) {
+                player.sendMessage(ChatColor.RED + "Tu n'as pas la permission d'observer une partie.");
+                return;
+            }
+            manager.addSpectator(player, arena);
+            return;
+        }
+
         // Toute la logique de validation (configuree, en attente, deja dans une arene, pleine...)
         // est deja geree par ArenaManager#joinLobby, on delegue simplement.
         manager.joinLobby(player, arena);

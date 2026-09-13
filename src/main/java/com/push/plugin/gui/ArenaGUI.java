@@ -77,10 +77,10 @@ public class ArenaGUI {
 
     /**
      * Cree l'icone representant une arene.
-     * - Arene jouable (WAITING, pas pleine) -> laine verte
-     * - Arene en cours (RUNNING/ENDING) -> laine rouge
-     * - Arene pleine -> laine orange
-     * - Arene non configuree -> verre gris
+     * - Arene jouable (WAITING, pas pleine) -> vitre teintee verte (lime)
+     * - Arene en cours (RUNNING/ENDING) -> vitre teintee rouge
+     * - Arene pleine -> vitre teintee orange
+     * - Arene non configuree -> vitre teintee grise
      */
     private ItemStack buildArenaItem(Arena arena) {
         String name = arena.getName();
@@ -99,17 +99,17 @@ public class ArenaGUI {
             statusLine = ChatColor.GRAY + "Non configuree";
             statusColor = ChatColor.GRAY;
         } else if (state == Arena.State.RUNNING || state == Arena.State.ENDING) {
-            mat = Material.RED_WOOL;
+            mat = Material.RED_STAINED_GLASS_PANE;
             displayName = ChatColor.RED + "" + ChatColor.BOLD + "\u2694 " + capitalize(name);
             statusLine = ChatColor.RED + "Partie en cours";
             statusColor = ChatColor.RED;
         } else if (current >= max) {
-            mat = Material.ORANGE_WOOL;
+            mat = Material.ORANGE_STAINED_GLASS_PANE;
             displayName = ChatColor.GOLD + "" + ChatColor.BOLD + "\u26A0 " + capitalize(name);
             statusLine = ChatColor.GOLD + "Pleine";
             statusColor = ChatColor.GOLD;
         } else {
-            mat = Material.LIME_WOOL;
+            mat = Material.LIME_STAINED_GLASS_PANE;
             displayName = ChatColor.GREEN + "" + ChatColor.BOLD + "\u2714 " + capitalize(name);
             statusLine = ChatColor.GREEN + "Disponible";
             statusColor = ChatColor.GREEN;
@@ -133,9 +133,15 @@ public class ArenaGUI {
                 && current < max;
 
         if (joinable) {
-            lore.add(ChatColor.YELLOW + "\u25B6 Cliquez pour rejoindre !");
+            lore.add(ChatColor.YELLOW + "\u25B6 Clic gauche : rejoindre");
         } else {
-            lore.add(ChatColor.RED + "\u2716 Indisponible");
+            lore.add(ChatColor.RED + "\u2716 Indisponible pour jouer");
+        }
+        if (arena.isFullyConfigured()) {
+            lore.add(ChatColor.AQUA + "\u25C9 Clic droit : observer");
+            if (arena.countSpectators() > 0) {
+                lore.add(ChatColor.DARK_GRAY + "   " + arena.countSpectators() + " spectateur(s)");
+            }
         }
 
         meta.setLore(lore);

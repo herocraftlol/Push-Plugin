@@ -1,5 +1,6 @@
 package com.push.plugin;
 
+import com.push.plugin.gui.TeamSelectGUI;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -10,8 +11,8 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 
 /**
- * Gere le diamant special place en slot 0 pour les admins en attente dans un lobby :
- * un clic dessus lance immediatement la partie sans attendre le nombre minimum de joueurs.
+ * Gere les items speciaux du lobby d'attente : le diamant admin (slot 0, lance la partie
+ * immediatement), la barriere pour quitter (slot 5) et l'item de selection d'equipe (slot 6).
  */
 public class AdminItemListener implements Listener {
 
@@ -23,14 +24,32 @@ public class AdminItemListener implements Listener {
 
     @EventHandler
     public void onInteract(PlayerInteractEvent event) {
-        Player player = event.getPlayer();
         ItemStack item = event.getItem();
-        if (item == null || item.getType() != Material.DIAMOND) return;
-        if (!isStartItem(item)) return;
+        if (item == null || !item.hasItemMeta() || !item.getItemMeta().hasDisplayName()) return;
 
-        event.setCancelled(true);
+        Player player = event.getPlayer();
+        String name = item.getItemMeta().getDisplayName();
 
-        if (!player.hasPermission("arenapvp.admin")) {
+        if (item.getType() == Material.DIAMOND && name.contains("Lancer la partie maintenant")) {
+            event.setCancelled(true);
+            handleForceStart(player);
+            return;
+        }
+
+        if (item.getType() == Material.BARRIER && ChatColor.stripColor(name).equalsIgnoreCase("Quitter")) {
+            event.setCancelled(true);
+            plugin.getArenaManager().leave(player);
+            return;
+        }
+
+        if (ChatColor.stripColor(name).startsWith("Equipe : ")) {
+            event.setCancelled(true);
+            handleTeamSelect(player);
+        }
+    }
+
+    private void handleForceStart(Player player) {
+        if (!player.hasPermission("push.admin")) {
             return;
         }
 
@@ -49,9 +68,10 @@ public class AdminItemListener implements Listener {
         player.sendMessage(ChatColor.GREEN + "Tu as force le demarrage de la partie.");
     }
 
-    private boolean isStartItem(ItemStack item) {
-        if (!item.hasItemMeta()) return false;
-        ItemMeta meta = item.getItemMeta();
-        return meta.hasDisplayName() && meta.getDisplayName().contains("Lancer la partie maintenant");
+    private void handleTeamSelect(Player player) {
+        Arena arena = plugin.getArenaManager().getArenaOf(player.getUniqueId());
+        if (arena == null || arena.getState() != Arena.State.WAITING) return;
+        new TeamSelectGUI(plugin).open(player, arena);
     }
 }
+

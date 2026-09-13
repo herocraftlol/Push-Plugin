@@ -57,6 +57,14 @@ public class StatsManager {
         save();
     }
 
+    /** Une "poussee" = une elimination par le vide creditee a ce joueur. */
+    public void addPush(UUID uuid, String name) {
+        int pushes = getPushes(uuid) + 1;
+        config.set(basePath(uuid) + ".pushes", pushes);
+        config.set(basePath(uuid) + ".name", name);
+        save();
+    }
+
     /** Ajoute des degats au total cumule d'un joueur pour toutes ses parties. */
     public void addDamage(UUID uuid, String name, double amount) {
         double total = getDamage(uuid) + amount;
@@ -68,6 +76,7 @@ public class StatsManager {
     public int getKills(UUID uuid) { return config.getInt(basePath(uuid) + ".kills", 0); }
     public int getWins(UUID uuid) { return config.getInt(basePath(uuid) + ".wins", 0); }
     public double getDamage(UUID uuid) { return config.getDouble(basePath(uuid) + ".damage", 0.0); }
+    public int getPushes(UUID uuid) { return config.getInt(basePath(uuid) + ".pushes", 0); }
 
     public UUID findUuidByName(String name) {
         ConfigurationSection players = config.getConfigurationSection("players");
@@ -81,7 +90,7 @@ public class StatsManager {
         return null;
     }
 
-    public enum StatType { KILLS, WINS, DAMAGE }
+    public enum StatType { KILLS, WINS, DAMAGE, PUSHES }
 
     public record LeaderboardEntry(String name, double value) {}
 
@@ -97,6 +106,7 @@ public class StatsManager {
                 case KILLS  -> players.getInt(key + ".kills", 0);
                 case WINS   -> players.getInt(key + ".wins", 0);
                 case DAMAGE -> players.getDouble(key + ".damage", 0.0);
+                case PUSHES -> players.getInt(key + ".pushes", 0);
             };
             entries.add(new LeaderboardEntry(name, value));
         }

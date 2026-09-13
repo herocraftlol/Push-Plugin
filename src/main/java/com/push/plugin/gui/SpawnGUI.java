@@ -1,7 +1,7 @@
-package com.arenapvp.plugin.gui;
+package com.push.plugin.gui;
 
-import com.arenapvp.plugin.Arena;
-import com.arenapvp.plugin.ArenaPvPPlugin;
+import com.push.plugin.Arena;
+import com.push.plugin.PushPlugin;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
@@ -36,14 +36,14 @@ public class SpawnGUI {
     private static final String GUI_TITLE_PREFIX = ChatColor.DARK_PURPLE + "" + ChatColor.BOLD + "\u2726 Spawns - ";
     private static final int GUI_SIZE = 27;
 
-    private final ArenaPvPPlugin plugin;
+    private final PushPlugin plugin;
 
     // Retient, pour chaque joueur ayant ce GUI ouvert, le nom de l'arene concernee
     // (plus fiable que de reparser le titre de l'inventaire, notamment si le nom
     // de l'arene contient un tiret).
     private final Map<UUID, String> openArenaByPlayer = new HashMap<>();
 
-    public SpawnGUI(ArenaPvPPlugin plugin) {
+    public SpawnGUI(PushPlugin plugin) {
         this.plugin = plugin;
     }
 

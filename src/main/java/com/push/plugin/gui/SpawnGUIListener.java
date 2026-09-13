@@ -1,8 +1,8 @@
-package com.arenapvp.plugin.gui;
+package com.push.plugin.gui;
 
-import com.arenapvp.plugin.Arena;
-import com.arenapvp.plugin.ArenaManager;
-import com.arenapvp.plugin.ArenaPvPPlugin;
+import com.push.plugin.Arena;
+import com.push.plugin.ArenaManager;
+import com.push.plugin.PushPlugin;
 import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -18,10 +18,10 @@ import org.bukkit.event.inventory.InventoryCloseEvent;
  */
 public class SpawnGUIListener implements Listener {
 
-    private final ArenaPvPPlugin plugin;
+    private final PushPlugin plugin;
     private final SpawnGUI spawnGUI;
 
-    public SpawnGUIListener(ArenaPvPPlugin plugin, SpawnGUI spawnGUI) {
+    public SpawnGUIListener(PushPlugin plugin, SpawnGUI spawnGUI) {
         this.plugin = plugin;
         this.spawnGUI = spawnGUI;
     }
